@@ -2,7 +2,9 @@
 
 Connect your Noverload saved content to AI assistants like Claude, Cursor, and Windsurf using the Model Context Protocol (MCP).
 
-**🚀 Now using Noverload API v2** for improved performance, token management, and enhanced search capabilities.
+**🎯 Beta Release v0.6.0** - Enhanced stability, improved error handling, and better reliability based on user feedback.
+
+**🚀 Powered by Noverload API v2** for advanced search, content synthesis, and intelligent token management.
 
 ## Quick Start
 

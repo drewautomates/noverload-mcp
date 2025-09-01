@@ -40,10 +40,10 @@ async function main() {
   let client: NoverloadClient | null = null;
   let config: Config | null = null;
 
-  // Initialize with config from environment or args
+  // Initialize with config from environment only (security: no args to prevent token exposure in ps)
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     if (!client) {
-      const rawConfig = process.env.NOVERLOAD_CONFIG || process.argv[2];
+      const rawConfig = process.env.NOVERLOAD_CONFIG;
       if (!rawConfig) {
         throw new Error("Configuration required. Set NOVERLOAD_CONFIG environment variable.");
       }

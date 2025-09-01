@@ -66,6 +66,9 @@ export class NoverloadClient {
     // Verify the token is valid by making a test request
     const response = await this.request("/api/user");
     if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error("Access token is invalid or expired. Please generate a new token from Noverload.");
+      }
       const errorText = await response.text().catch(() => "Unknown error");
       throw new Error(`Invalid access token or API unavailable: ${response.status} - ${errorText}`);
     }
@@ -334,10 +337,6 @@ export class NoverloadClient {
 
   // New methods for enhanced endpoints
   async estimateSearchTokens(query: string, limit: number = 10): Promise<any> {
-    const params = new URLSearchParams({
-      q: query,
-      limit: limit.toString(),
-    });
     
     // Use v2 search with estimateOnly flag
     const response = await this.request(`/api/mcp/v2/search`, {

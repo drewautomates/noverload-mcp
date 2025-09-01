@@ -1,6 +1,6 @@
 {
   "name": "noverload-mcp",
-  "version": "0.5.0",
+  "version": "0.6.0-beta.1",
   "description": "MCP server for Noverload - Access saved content in AI tools with advanced search, synthesis, and token management",
   "type": "module",
   "main": "dist/index.js",
