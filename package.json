@@ -1,0 +1,25 @@
+{
+  "name": "noverload-mcp",
+  "version": "0.1.0",
+  "description": "Model Context Protocol server for Noverload - Access your saved content in AI tools",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @noverload/mcp-server",
+    "dev": "npm run dev --workspace @noverload/mcp-server",
+    "test": "npm run test --workspace @noverload/mcp-server",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "npm run typecheck --workspace @noverload/mcp-server"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

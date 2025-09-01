@@ -1,0 +1,55 @@
+{
+  "name": "noverload-mcp",
+  "version": "0.5.0",
+  "description": "MCP server for Noverload - Access saved content in AI tools with advanced search, synthesis, and token management",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "noverload-mcp": "dist/index.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "claude",
+    "cursor",
+    "windsurf",
+    "noverload",
+    "knowledge-management"
+  ],
+  "author": "Noverload",
+  "license": "MIT",
+  "homepage": "https://github.com/noverload/mcp-server",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/noverload/mcp-server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/noverload/mcp-server/issues"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.4",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

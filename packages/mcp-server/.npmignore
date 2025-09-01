@@ -1,0 +1,22 @@
+# Source files
+src/
+tsconfig.json
+
+# All map files
+**/*.map
+**/*.d.ts.map
+
+# Development files  
+.gitignore
+.npmignore
+
+# Test files
+*.test.ts
+*.spec.ts
+**/*.test.js
+**/*.spec.js
+__tests__/
+coverage/
+
+# Build artifacts we don't need
+*.tsbuildinfo
