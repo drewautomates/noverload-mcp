@@ -70,6 +70,7 @@ Desktop.ini
 # MCP specific
 *.mcp.log
 mcp-debug/
+.mcp.json
 
 # Personal access tokens and credentials
 *token*

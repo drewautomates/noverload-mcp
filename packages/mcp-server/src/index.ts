@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
-  CallToolRequestSchema,
   ListResourcesRequestSchema,
-  ListToolsRequestSchema,
   ReadResourceRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { NoverloadClient } from "./client.js";
-import { tools } from "./tools/index.js";
 import { resources } from "./resources/index.js";
+import { tools } from "./tools/index.js";
 
 const ConfigSchema = z.object({
   accessToken: z.string().min(1, "Access token is required"),
@@ -22,32 +22,137 @@ const ConfigSchema = z.object({
 type Config = z.infer<typeof ConfigSchema>;
 
 async function main() {
+  // Log tools status at startup
+  console.error(`MCP Server starting with ${tools ? tools.length : 0} tools`);
+  if (!tools || tools.length === 0) {
+    console.error("WARNING: No tools loaded! Check imports.");
+  }
+
   const transport = new StdioServerTransport();
-  
-  const server = new Server(
+
+  // Provide minimal instructions and proactively enumerate tool names to aid clients/LLMs
+  const instructions = `Noverload MCP: Provides resources and tools for saved content. Tools available: ${
+    tools && tools.length > 0 ? tools.map((t) => t.name).join(", ") : "none"
+  }. Use tools/list to discover and tools/call to invoke.`;
+
+  const server = new McpServer(
     {
       name: "noverload-mcp",
-      version: "0.4.0",
+      version: "0.7.2",
     },
     {
       capabilities: {
-        tools: {},
+        tools: { listChanged: true },
         resources: {},
+        prompts: {},
       },
+      instructions,
     }
   );
 
   let client: NoverloadClient | null = null;
   let config: Config | null = null;
 
-  // Initialize with config from environment only (security: no args to prevent token exposure in ps)
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
+  // Convert JSON Schema to a Zod raw shape for McpServer.registerTool
+  function jsonSchemaToZodShape(schema: any): Record<string, z.ZodTypeAny> {
+    const shape: Record<string, z.ZodTypeAny> = {};
+    if (!schema || schema.type !== "object" || !schema.properties) return shape;
+    const requiredList: string[] = Array.isArray(schema.required)
+      ? schema.required
+      : [];
+    for (const [key, prop] of Object.entries<any>(schema.properties)) {
+      let t: z.ZodTypeAny;
+      if (prop.enum && Array.isArray(prop.enum) && prop.enum.length > 0) {
+        t = z.enum(prop.enum as [string, ...string[]]);
+      } else if (prop.type === "string") {
+        t = z.string();
+      } else if (prop.type === "number" || prop.type === "integer") {
+        t = z.number();
+      } else if (prop.type === "boolean") {
+        t = z.boolean();
+      } else if (prop.type === "array") {
+        const items = (prop.items ?? {}) as any;
+        let itemType: z.ZodTypeAny = z.unknown();
+        if (items.enum && Array.isArray(items.enum) && items.enum.length > 0) {
+          itemType = z.enum(items.enum as [string, ...string[]]);
+        } else if (items.type === "string") {
+          itemType = z.string();
+        } else if (items.type === "number" || items.type === "integer") {
+          itemType = z.number();
+        } else if (items.type === "boolean") {
+          itemType = z.boolean();
+        }
+        t = z.array(itemType);
+      } else if (prop.type === "object") {
+        t = z.object({}).passthrough();
+      } else {
+        t = z.unknown();
+      }
+      if (!requiredList.includes(key)) {
+        t = t.optional();
+      }
+      shape[key] = t;
+    }
+    return shape;
+  }
+
+  // Register tools using McpServer so the SDK advertises and handles list/call automatically
+  for (const t of tools) {
+    const zodShape = jsonSchemaToZodShape(t.inputSchema as any);
+    server.registerTool(
+      t.name,
+      {
+        description: t.description,
+        inputSchema: zodShape,
+        annotations: {
+          readOnlyHint: !t.modifies,
+          destructiveHint: t.modifies === true,
+        },
+      },
+      async (args) => {
+        if (!client) {
+          const rawConfig = process.env.NOVERLOAD_CONFIG;
+          if (!rawConfig) {
+            throw new Error(
+              "Configuration required. Set NOVERLOAD_CONFIG environment variable."
+            );
+          }
+          try {
+            config = ConfigSchema.parse(JSON.parse(rawConfig));
+            client = new NoverloadClient(config);
+            await client.initialize();
+          } catch (error) {
+            throw new Error(`Invalid configuration: ${error}`);
+          }
+        }
+        // Delegate to existing tool handler (validates args internally)
+        return (await t.handler(client, args)) as any;
+      }
+    );
+  }
+
+  // Minimal prompts support to satisfy clients that expect prompts
+  server.server.setRequestHandler(ListPromptsRequestSchema, async () => {
+    return { prompts: [] };
+  });
+
+  server.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+    // No built-in prompts; report unknown
+    throw new Error(`Unknown prompt: ${request.params.name}`);
+  });
+
+  // CallTool is handled automatically by McpServer for registered tools
+
+  server.server.setRequestHandler(ListResourcesRequestSchema, async () => {
+    console.error("ListResources handler called");
     if (!client) {
       const rawConfig = process.env.NOVERLOAD_CONFIG;
       if (!rawConfig) {
-        throw new Error("Configuration required. Set NOVERLOAD_CONFIG environment variable.");
+        throw new Error(
+          "Configuration required. Set NOVERLOAD_CONFIG environment variable."
+        );
       }
-      
+
       try {
         config = ConfigSchema.parse(JSON.parse(rawConfig));
         client = new NoverloadClient(config);
@@ -57,51 +162,45 @@ async function main() {
       }
     }
 
-    return {
-      tools: tools.map(tool => ({
-        name: tool.name,
-        description: tool.description,
-        inputSchema: tool.inputSchema,
-      })),
-    };
-  });
-
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    if (!client) {
-      throw new Error("Client not initialized");
-    }
-
-    const tool = tools.find(t => t.name === request.params.name);
-    if (!tool) {
-      throw new Error(`Unknown tool: ${request.params.name}`);
-    }
-
-    if (config?.readOnly && tool.modifies) {
-      throw new Error(`Tool ${request.params.name} modifies data but server is in read-only mode`);
-    }
-
-    return await tool.handler(client, request.params.arguments);
-  });
-
-  server.setRequestHandler(ListResourcesRequestSchema, async () => {
-    if (!client) {
-      throw new Error("Client not initialized");
-    }
-
     const resourceList = await resources.list(client);
     return {
       resources: resourceList,
     };
   });
 
-  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-    if (!client) {
-      throw new Error("Client not initialized");
+  server.server.setRequestHandler(
+    ReadResourceRequestSchema,
+    async (request) => {
+      if (!client) {
+        const rawConfig = process.env.NOVERLOAD_CONFIG;
+        if (!rawConfig) {
+          throw new Error(
+            "Configuration required. Set NOVERLOAD_CONFIG environment variable."
+          );
+        }
+
+        try {
+          config = ConfigSchema.parse(JSON.parse(rawConfig));
+          client = new NoverloadClient(config);
+          await client.initialize();
+        } catch (error) {
+          throw new Error(`Invalid configuration: ${error}`);
+        }
+      }
+
+      return await resources.read(client, request.params.uri);
     }
+  );
 
-    return await resources.read(client, request.params.uri);
-  });
-
+  // Some clients defer listing tools until they receive a tools/list_changed notification.
+  // Register the hook before connecting to avoid race conditions.
+  server.server.oninitialized = async () => {
+    try {
+      await server.sendToolListChanged();
+    } catch (err) {
+      console.error("Failed to send tools/list_changed notification:", err);
+    }
+  };
   await server.connect(transport);
   console.error("Noverload MCP Server running");
 }

@@ -2,7 +2,7 @@
 
 Connect your Noverload saved content to AI assistants like Claude, Cursor, and Windsurf using the Model Context Protocol (MCP).
 
-**🎯 Beta Release v0.6.0** - Enhanced stability, improved error handling, and better reliability based on user feedback.
+**🚀 Release v0.7.0** - Major expansion with 23 advanced tools for content analysis, framework extraction, narrative building, and knowledge synthesis.
 
 **🚀 Powered by Noverload API v2** for advanced search, content synthesis, and intelligent token management.
 
@@ -144,20 +144,43 @@ Add to your Windsurf MCP configuration:
 
 ## Available Tools
 
-Once configured, your AI assistant can:
+**23 powerful tools** organized into categories for comprehensive content analysis:
 
-### Reading Content
+### Content Retrieval & Access
+- `list_saved_content` - Browse your saved content library with filtering
+- `get_content_details` - Get full details including summaries and insights  
+- `get_raw_content` - Access raw text content for processing
+- `batch_get_content` - Efficiently retrieve multiple items at once
 
-- `list_saved_content` - Browse your saved content library
-- `get_content_details` - Get full details including summaries and insights
-- `search_content` - Search through your content by keywords
-- `list_actions` - View action items extracted from content
-- `list_goals` - See your Health, Wealth, and Relationships goals
+### Search & Discovery
+- `search_content` - Advanced search with multiple modes and filters
+- `find_similar_content` - Discover semantically similar content
+- `expand_search` - Expand queries with related terms for broader discovery
 
-### Writing (when read-only is disabled)
+### Analysis & Synthesis
+- `synthesize_content` - Create comprehensive analysis from multiple sources
+- `explore_topic` - Deep dive into topics across your content
+- `find_connections` - Discover patterns and relationships between content
+- `extract_insights` - Extract key takeaways and actionable insights
+- `get_timeline` - Build chronological understanding of topics
+- `build_knowledge_graph` - Visualize concept relationships
+- `extract_frameworks` - Identify methodologies and structured approaches
+- `find_examples` - Locate specific examples and case studies
+- `build_narrative` - Create coherent stories from multiple sources
 
-- `save_content` - Save new URLs to your Noverload library
-- `complete_action` - Mark action items as completed
+### Content Management
+- `save_content` - Save new URLs to your library (write mode only)
+- `smart_sections` - Organize content into intelligent sections
+
+### Actions & Goals
+- `list_actions` - View extracted action items with priorities
+- `complete_action` - Mark action items as done (write mode only)  
+- `list_goals` - Access your Health, Wealth, Relationships goals
+
+### Utility & Planning
+- `estimate_search_tokens` - Preview token usage before large operations
+- `get_instructions` - Access user-specific guidance and context
+- `plan_query` - Strategically plan complex multi-step analyses
 
 ## Security Recommendations
 
