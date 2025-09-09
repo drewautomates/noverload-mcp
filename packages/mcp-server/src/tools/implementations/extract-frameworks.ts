@@ -96,22 +96,21 @@ export const extractFrameworksTool: Tool = {
       // First, get content that might contain frameworks
       const searchQuery =
         input.query ||
-        "framework methodology process steps guide how to tutorial";
+        "framework methodology process steps guide how to tutorial system approach";
 
-      // Search for relevant content
-      const searchResults = await client.searchContentV2({
-        query: searchQuery,
-        mode: "any",
-        limit: 30, // Get more results to find frameworks
-        contentTypes: input.contentTypes,
+      // Use synthesis to extract frameworks from relevant content
+      const synthesisResult = await client.synthesizeContent({
+        query: `Extract frameworks, methodologies, and processes related to: ${searchQuery}`,
+        synthesisMode: "actionable",
+        maxSources: 30,
       });
 
-      if (!searchResults.results || searchResults.results.length === 0) {
+      if (!synthesisResult.insights || synthesisResult.insights.length === 0) {
         return {
           content: [
             {
               type: "text",
-              text: "🔍 No content found that might contain frameworks. Try saving content about methodologies, tutorials, or how-to guides first.",
+              text: "🔍 No frameworks found in your saved content. Try saving content about methodologies, tutorials, or how-to guides first.",
             },
           ],
           data: {
@@ -122,66 +121,91 @@ export const extractFrameworksTool: Tool = {
         };
       }
 
-      // Collect all frameworks from content with ai_insights
+      // Extract frameworks from synthesis insights
       const allFrameworks: Framework[] = [];
-      const contentWithFrameworks: string[] = [];
-
-      for (const result of searchResults.results) {
-        // Check if this content has ai_insights with frameworks
-        if (result.aiInsights?.frameworks) {
-          const frameworks = result.aiInsights.frameworks;
-
-          for (const fw of frameworks) {
-            if (fw.confidence >= input.minConfidence) {
-              allFrameworks.push({
-                ...fw,
-                sourceContent: {
-                  id: result.id,
-                  title: result.title || "Untitled",
-                  url: result.url,
-                  type: result.contentType,
-                },
-              });
+      const frameworkPattern = /(?:framework|methodology|process|approach|system|technique|method|strategy):\s*(.+)/i;
+      
+      for (const insight of synthesisResult.insights) {
+        // Check if this insight describes a framework
+        const text = typeof insight === 'string' ? insight : (insight as any).text || (insight as any).insight;
+        const source = typeof insight === 'object' ? (insight as any).source : null;
+        
+        // Look for framework indicators
+        if (text && (
+          text.toLowerCase().includes('framework') ||
+          text.toLowerCase().includes('methodology') ||
+          text.toLowerCase().includes('process') ||
+          text.toLowerCase().includes('step') ||
+          text.toLowerCase().includes('approach') ||
+          text.toLowerCase().includes('system')
+        )) {
+          // Extract framework name from the text
+          let frameworkName = text;
+          const match = text.match(/(?:^|\b)([A-Z][A-Za-z0-9\s\-&]+(?:Framework|Method|Process|System|Approach|Model|Strategy))/);
+          if (match) {
+            frameworkName = match[1].trim();
+          } else {
+            // Try to extract a reasonable name from the first part
+            frameworkName = text.split(/[:,.]/)[0].trim();
+            if (frameworkName.length > 50) {
+              frameworkName = frameworkName.substring(0, 50) + "...";
             }
           }
 
-          if (frameworks.length > 0) {
-            contentWithFrameworks.push(result.id);
+          // Determine framework type
+          let type: Framework["type"] = "framework";
+          if (text.toLowerCase().includes('methodology')) type = "methodology";
+          else if (text.toLowerCase().includes('process')) type = "process";
+          else if (text.toLowerCase().includes('pattern')) type = "pattern";
+          else if (text.toLowerCase().includes('technique')) type = "technique";
+
+          const framework: Framework = {
+            name: frameworkName,
+            type: type,
+            description: text,
+            useCases: [],
+            confidence: 0.8, // Default confidence since synthesis doesn't provide it
+            sourceContent: source ? {
+              id: source.id || "unknown",
+              title: source.title || "Unknown Source",
+              url: source.url || "",
+              type: source.type || "article",
+            } : undefined,
+          };
+
+          // Extract steps if mentioned
+          const stepRegex = /(?:step\s+)?(\d+)[.:\s]+([^.]+)/gi;
+          const steps: Array<{order: number; title: string; description: string}> = [];
+          let stepMatch;
+          let stepIdx = 0;
+          while ((stepMatch = stepRegex.exec(text)) !== null) {
+            steps.push({
+              order: parseInt(stepMatch[1] || '1') || stepIdx + 1,
+              title: `Step ${stepMatch[1] || stepIdx + 1}`,
+              description: (stepMatch[2] || '').trim(),
+            });
+            stepIdx++;
           }
+          
+          if (steps.length > 0) {
+            framework.steps = steps;
+          }
+
+          allFrameworks.push(framework);
         }
       }
 
-      // If no frameworks found in ai_insights, trigger extraction for top results
       if (allFrameworks.length === 0) {
-        // Extract frameworks from top 5 most relevant results
-        const topResults = searchResults.results.slice(0, 5);
-
-        let extractionMessage =
-          "🔄 No pre-extracted frameworks found. Analyzing content for frameworks...\n\n";
-
-        for (const content of topResults) {
-          if (!content.rawText && !content.summary) {
-            continue;
-          }
-
-          // Note: In production, this would call the extract-frameworks Edge Function
-          // For now, we'll indicate that extraction is needed
-          extractionMessage += `📝 ${content.title} - Needs framework extraction\n`;
-        }
-
         return {
           content: [
             {
               type: "text",
-              text:
-                extractionMessage +
-                "\n💡 Tip: Content processing will extract frameworks automatically. Try again in a few moments, or use the 'noverload_process_content' tool to trigger processing.",
+              text: "🔍 No clear frameworks found in the synthesis results. Your content may not contain structured methodologies or processes.",
             },
           ],
           data: {
             frameworks: [],
             totalFound: 0,
-            contentNeedingExtraction: topResults.map((r: any) => r.id),
             searchQuery: searchQuery,
           },
         };
@@ -270,7 +294,7 @@ export const extractFrameworksTool: Tool = {
       responseText += `\n---\n📊 **Summary:**\n`;
       responseText += `- Total frameworks found: ${allFrameworks.length}\n`;
       responseText += `- High confidence (>90%): ${allFrameworks.filter((f) => f.confidence > 0.9).length}\n`;
-      responseText += `- Content sources analyzed: ${contentWithFrameworks.length}\n`;
+      responseText += `- Sources analyzed: ${synthesisResult.sources?.length || 0}\n`;
 
       if (allFrameworks.length > input.limit) {
         responseText += `\n*Showing top ${input.limit} frameworks. Increase limit to see more.*`;
@@ -289,7 +313,6 @@ export const extractFrameworksTool: Tool = {
           byType: Object.fromEntries(
             Object.entries(byType).map(([type, fws]) => [type, fws.length])
           ),
-          contentSources: contentWithFrameworks,
           searchQuery: searchQuery,
         },
       };

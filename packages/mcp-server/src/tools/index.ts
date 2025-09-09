@@ -20,16 +20,21 @@ import { extractInsightsTool } from "./implementations/extract-insights.js";
 import { getTimelineTool } from "./implementations/timeline.js";
 import { buildKnowledgeGraphTool } from "./implementations/knowledge-graph.js";
 import { extractFrameworksTool } from "./implementations/extract-frameworks.js";
-import { findExamplesTool } from "./implementations/find-examples.js";
-import { buildNarrativeTool } from "./implementations/build-narrative.js";
 import { expandSearchTool } from "./implementations/expand-search.js";
 import { smartSectionsTool } from "./implementations/smart-sections.js";
 
+// ARCHIVED - IN DEVELOPMENT
+// These tools need more work before being production-ready
+// import { findExamplesTool } from "./implementations/find-examples.js";
+// import { buildNarrativeTool } from "./implementations/build-narrative.js";
+
 // Export all tools as a single array
 export const tools: Tool[] = [
+  // CORE TOOLS - Optimized for LLM context provision
+  
   // Content retrieval and listing
   listSavedContentTool,
-  getContentDetailsTool,
+  getContentDetailsTool,  // Now returns FULL content for context
   getRawContentTool,
   batchGetContentTool,
   
@@ -45,9 +50,11 @@ export const tools: Tool[] = [
   extractInsightsTool,
   getTimelineTool,
   buildKnowledgeGraphTool,
-  extractFrameworksTool,
-  findExamplesTool,
-  buildNarrativeTool,
+  extractFrameworksTool,  // Fixed to use synthesis API
+  
+  // ARCHIVED - IN DEVELOPMENT
+  // findExamplesTool,     // Needs database schema updates
+  // buildNarrativeTool,   // Needs refinement
   
   // Actions and goals
   listActionsTool,
@@ -66,13 +73,18 @@ export const tools: Tool[] = [
 
 // Export individual tools for testing or specific usage
 export {
+  // Core content tools
   listSavedContentTool,
   getContentDetailsTool,
   searchContentTool,
   saveContentTool,
+  
+  // Actions and goals
   listActionsTool,
   completeActionTool,
   listGoalsTool,
+  
+  // Analysis tools
   estimateSearchTokensTool,
   synthesizeContentTool,
   findSimilarContentTool,
@@ -86,8 +98,10 @@ export {
   getTimelineTool,
   buildKnowledgeGraphTool,
   extractFrameworksTool,
-  findExamplesTool,
-  buildNarrativeTool,
   expandSearchTool,
   smartSectionsTool,
+  
+  // ARCHIVED - Available for testing but not in production
+  // findExamplesTool,
+  // buildNarrativeTool,
 };

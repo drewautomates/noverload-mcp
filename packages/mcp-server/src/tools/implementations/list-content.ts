@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { Tool } from "../types.js";
+import { generateTokenWarning } from "../utils/context-warnings.js";
 
 export const listSavedContentTool: Tool = {
   name: "list_saved_content",
-  description: "List saved content from Noverload with full details including titles, summaries, and insights. Optionally filter by status or content type.",
+  description: "List saved content from Noverload with summaries. For large lists (>10 items), consider using search or filters to reduce results. Full content is not included by default to save tokens.",
   inputSchema: {
     type: "object",
     properties: {
@@ -19,7 +20,7 @@ export const listSavedContentTool: Tool = {
       },
       limit: {
         type: "number",
-        description: "Maximum number of items to return",
+        description: "Maximum number of items to return (default: 20, recommended: ≤10 for detailed view)",
         default: 20,
       },
     },
@@ -34,6 +35,12 @@ export const listSavedContentTool: Tool = {
     const params = schema.parse(args);
     const content = await client.listContent(params);
     
+    // Calculate estimated token usage for awareness
+    const estimatedTokens = content.reduce((sum, item) => {
+      // Estimate based on summary + metadata (not full content)
+      return sum + (item.summary ? 200 : 50) + 100; // metadata overhead
+    }, 0);
+    
     // Build detailed response
     let responseText = `# Saved Content Library\n`;
     responseText += `Found ${content.length} items`;
@@ -44,6 +51,13 @@ export const listSavedContentTool: Tool = {
     if (filters.length > 0) {
       responseText += ` (filtered by ${filters.join(', ')})`;
     }
+    
+    // Add token usage note if listing many items
+    if (content.length > 10) {
+      responseText += `\n📊 **Note:** Listing ${content.length} items with summaries (~${estimatedTokens.toLocaleString()} tokens)`;
+      responseText += `\n💡 **Tip:** Use search or filters to find specific content more efficiently`;
+    }
+    
     responseText += `\n\n`;
     
     if (content.length > 0) {

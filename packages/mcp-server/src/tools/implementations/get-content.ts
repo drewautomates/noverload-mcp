@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Tool } from "../types.js";
+import { generateTokenWarning, generatePreviewResponse, TOKEN_THRESHOLDS } from "../utils/context-warnings.js";
 
 export const getContentDetailsTool: Tool = {
   name: "get_content_details",
@@ -11,6 +12,11 @@ export const getContentDetailsTool: Tool = {
         type: "string",
         description: "The ID of the content to retrieve",
       },
+      acceptLargeContent: {
+        type: "boolean",
+        description: "Accept large content (>50k tokens) without warning",
+        default: false,
+      },
     },
     required: ["contentId"],
   },
@@ -18,8 +24,9 @@ export const getContentDetailsTool: Tool = {
   handler: async (client, args) => {
     const schema = z.object({
       contentId: z.string(),
+      acceptLargeContent: z.boolean().optional().default(false),
     });
-    const { contentId } = schema.parse(args);
+    const { contentId, acceptLargeContent } = schema.parse(args);
     const content = await client.getContent(contentId);
     
     // Build comprehensive response with all details
@@ -77,22 +84,49 @@ export const getContentDetailsTool: Tool = {
       }
     }
     
-    // Include full text content info and preview
+    // Check if content is large and needs warning
+    if (content.tokenCount && content.tokenCount > TOKEN_THRESHOLDS.HUGE && !acceptLargeContent) {
+      // Return preview with warning instead of full content
+      return {
+        content: [
+          {
+            type: "text",
+            text: generatePreviewResponse(content, content.tokenCount, "content retrieval"),
+          },
+        ],
+        data: {
+          warning: "Large content - requires confirmation",
+          tokenCount: content.tokenCount,
+          contentId: content.id,
+          preview: {
+            title: content.title,
+            contentType: content.contentType,
+            url: content.url,
+            summary: content.summary,
+          },
+        },
+      };
+    }
+    
+    // Include full text content
     if (content.rawText) {
       const wordCount = content.rawText.split(/\s+/).length;
       responseText += `## Full Content\n`;
       responseText += `**Word Count:** ${wordCount.toLocaleString()} words\n`;
       
-      // Show a reasonable preview (500 chars is about 100 tokens)
-      responseText += `**Preview (first 500 chars):**\n`;
-      responseText += `${content.rawText.slice(0, 500)}...\n\n`;
-      
-      if (content.tokenCount && content.tokenCount > 10000) {
-        responseText += `⚠️ **Note:** The complete ${content.contentType} content (${wordCount.toLocaleString()} words, ~${content.tokenCount.toLocaleString()} tokens) is available in the data field.\n`;
-        responseText += `This is a large amount of content that will consume significant context if fully processed.\n`;
-      } else {
-        responseText += `*Note: Complete content is available in the data field for analysis.*\n`;
+      // Add appropriate warning based on size
+      const tokenWarning = generateTokenWarning(
+        content.tokenCount || wordCount * 1.3, // Estimate if no token count
+        "content"
+      );
+      if (tokenWarning) {
+        responseText += tokenWarning + '\n';
       }
+      
+      // Include the full content for LLM context
+      responseText += `\n### Complete Text:\n\n`;
+      responseText += content.rawText;
+      responseText += '\n\n';
     }
     
     return {

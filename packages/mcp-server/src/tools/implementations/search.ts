@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Tool } from "../types.js";
+import { generateTokenWarning, TOKEN_THRESHOLDS, CONTEXT_MANAGEMENT_INSTRUCTIONS } from "../utils/context-warnings.js";
 
 export const searchContentTool: Tool = {
   name: "search_content",
@@ -36,7 +37,12 @@ export const searchContentTool: Tool = {
       },
       includeFullContent: {
         type: "boolean",
-        description: "Include full text (WARNING: 10k-100k+ tokens)",
+        description: "Include full text (WARNING: May consume 10k-100k+ tokens)",
+        default: false,
+      },
+      acceptLargeContent: {
+        type: "boolean",
+        description: "Accept large content results (>50k tokens total) without warning",
         default: false,
       },
       contentTypes: {
@@ -79,6 +85,7 @@ export const searchContentTool: Tool = {
       tags: z.array(z.string()).optional(),
       limit: z.number().optional().default(10),
       includeFullContent: z.boolean().optional().default(false),
+      acceptLargeContent: z.boolean().optional().default(false),
       contentTypes: z.array(z.enum(["youtube", "x_twitter", "reddit", "article", "pdf"])).optional(),
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
@@ -102,6 +109,57 @@ export const searchContentTool: Tool = {
       enableConceptExpansion: params.fuzzyMatch, // Use fuzzy matching as concept expansion
     });
     
+    // Calculate total token count if including full content
+    let totalTokens = 0;
+    if (params.includeFullContent && results.length > 0) {
+      totalTokens = results.reduce((sum: number, item: any) => {
+        return sum + (item.tokenCount || 0);
+      }, 0);
+      
+      // Check if we need to warn about large content
+      if (totalTokens > TOKEN_THRESHOLDS.HUGE && !params.acceptLargeContent) {
+        // Return warning instead of full results
+        let warningText = `# ⚠️ Large Content Warning\n\n`;
+        warningText += `Your search found ${results.length} results with ~${totalTokens.toLocaleString()} total tokens.\n`;
+        warningText += `This exceeds safe context limits.\n\n`;
+        
+        warningText += `## Options:\n`;
+        warningText += `1. **View summaries only** - Remove \`includeFullContent\` flag\n`;
+        warningText += `2. **Limit results** - Add \`limit: 5\` to get fewer results\n`;
+        warningText += `3. **Filter more** - Add content type or date filters\n`;
+        warningText += `4. **Accept anyway** - Re-run with \`acceptLargeContent: true\`\n\n`;
+        
+        warningText += `## Search Preview (summaries only):\n`;
+        warningText += `Found ${results.length} results matching "${params.query}"\n\n`;
+        
+        // Show first 3 results as preview
+        results.slice(0, 3).forEach((result: any, idx: number) => {
+          warningText += `**${idx + 1}. ${result.title || 'Untitled'}**\n`;
+          if (result.summary) {
+            const summaryText = typeof result.summary === 'string' 
+              ? result.summary 
+              : result.summary.one_sentence || result.summary.text;
+            warningText += `${summaryText}\n\n`;
+          }
+        });
+        
+        return {
+          content: [
+            {
+              type: "text",
+              text: warningText,
+            },
+          ],
+          data: {
+            warning: "Large content - requires confirmation",
+            totalTokens: totalTokens,
+            resultCount: results.length,
+            query: params.query,
+          },
+        };
+      }
+    }
+    
     // Format response with visual indicators
     let responseText = `# 🔍 Search Results: "${params.query}"\n`;
     responseText += `**Mode:** ${params.searchMode.toUpperCase()}${params.fuzzyMatch ? " with fuzzy matching" : ""}\n`;
@@ -119,7 +177,12 @@ export const searchContentTool: Tool = {
     }
     
     if (params.includeFullContent) {
-      responseText += `\n⚠️ **Full content included** - consuming significant tokens`;
+      const warningMsg = generateTokenWarning(totalTokens, "search results", results.length);
+      if (warningMsg) {
+        responseText += warningMsg;
+      } else {
+        responseText += `\n✅ **Full content included** (${totalTokens.toLocaleString()} tokens)`;
+      }
     }
     
     responseText += `\n\n`;

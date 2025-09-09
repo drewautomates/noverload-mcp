@@ -30,10 +30,33 @@ async function main() {
 
   const transport = new StdioServerTransport();
 
-  // Provide minimal instructions and proactively enumerate tool names to aid clients/LLMs
-  const instructions = `Noverload MCP: Provides resources and tools for saved content. Tools available: ${
-    tools && tools.length > 0 ? tools.map((t) => t.name).join(", ") : "none"
-  }. Use tools/list to discover and tools/call to invoke.`;
+  // Provide instructions for LLMs on context management
+  const instructions = `Noverload MCP: Smart knowledge management with context-aware retrieval.
+
+## Available Tools
+${tools && tools.length > 0 ? tools.map((t) => t.name).join(", ") : "none"}
+
+## IMPORTANT: Context Management Guidelines
+
+### Token Usage Awareness
+- list_saved_content: Returns summaries only (low token usage)
+- search_content: Use includeFullContent=true carefully (can be 10k-100k+ tokens)
+- get_content_details: Full content retrieval - check token count first
+- batch_get_content: Be selective with IDs to avoid context overflow
+
+### Best Practices for LLMs
+1. Start with search or list to find relevant content
+2. Use summaries first, then fetch full content only when needed
+3. For content >50k tokens, warn users before retrieval
+4. Suggest filters/limits when users request broad searches
+5. Use smart_sections for extracting specific parts of large documents
+
+### Warning Thresholds
+- <10k tokens: Safe for most operations
+- 10k-50k tokens: Warn about large content
+- >50k tokens: Require acceptLargeContent=true parameter
+
+Remember: Efficient context usage enables better conversations!`;
 
   const server = new McpServer(
     {
