@@ -303,9 +303,26 @@ export class NoverloadClient {
   ): Promise<any> {
     // Try v2 search first with better configuration
     try {
+      // Determine the best search mode based on parameters
+      let searchMode: "smart" | "semantic" | "hybrid" | "fulltext" = "smart";
+      
+      // If searchMode is explicitly specified, map it appropriately
+      if (options?.searchMode) {
+        if (options.searchMode === "phrase" || options.searchMode === "all") {
+          searchMode = "fulltext"; // Use fulltext for exact/all matching
+        } else if (options.searchMode === "any") {
+          searchMode = "hybrid"; // Use hybrid for broader matching
+        }
+      }
+      
+      // Override to semantic if concept expansion is explicitly requested
+      if (options?.enableConceptExpansion === true) {
+        searchMode = "semantic";
+      }
+      
       const v2Body = {
         query,
-        mode: "smart", // Use smart mode for better results
+        mode: searchMode, // Use appropriate mode based on request
         filters: options?.contentTypes || options?.tags || options?.dateFrom ? {
           contentTypes: options?.contentTypes,
           dateRange: (options?.dateFrom || options?.dateTo) ? {
@@ -320,11 +337,14 @@ export class NoverloadClient {
         options: {
           limit: options?.limit || 10,
           includeContent: options?.includeFullContent || false,
-          fuzzy: options?.fuzzyMatch !== false, // Default to true for broader matches
+          includeMetadata: true, // Always include metadata for richer results
+          includeSnippets: true, // Include snippets with highlights
+          minRelevance: 0.25, // Lower threshold for vector search to catch more results
         },
         features: {
           expandConcepts: options?.enableConceptExpansion !== false, // Default to true
-          semanticSearch: true, // Enable semantic search by default
+          includeRelated: false, // Don't include related by default (token heavy)
+          aggregateInsights: false, // Don't aggregate by default
         },
       };
 
@@ -431,25 +451,38 @@ export class NoverloadClient {
   // New v2 search method with enhanced features
   async searchContentV2(params: {
     query: string;
-    mode?: "smart" | "semantic" | "fulltext" | "any" | "all" | "phrase";
+    mode?: "smart" | "semantic" | "fulltext" | "hybrid" | "any" | "all" | "phrase";
     limit?: number;
     contentTypes?: string[];
     includeContent?: boolean;
+    minRelevance?: number;
   }): Promise<any> {
+    // Map legacy modes to v2 modes
+    let searchMode: "smart" | "semantic" | "hybrid" | "fulltext" = "smart";
+    if (params.mode) {
+      if (params.mode === "semantic") searchMode = "semantic";
+      else if (params.mode === "hybrid" || params.mode === "any") searchMode = "hybrid";
+      else if (params.mode === "fulltext" || params.mode === "all" || params.mode === "phrase") searchMode = "fulltext";
+      else searchMode = "smart";
+    }
+    
     const body = {
       query: params.query,
-      mode: params.mode || "smart",
+      mode: searchMode,
       filters: params.contentTypes ? {
         contentTypes: params.contentTypes,
       } : undefined,
       options: {
         limit: params.limit || 10,
         includeContent: params.includeContent || false,
-        fuzzy: true,
+        includeMetadata: true,
+        includeSnippets: true,
+        minRelevance: params.minRelevance || 0.25, // Lower threshold for better recall
       },
       features: {
-        expandConcepts: true,
-        semanticSearch: true,
+        expandConcepts: searchMode === "semantic" || searchMode === "smart",
+        includeRelated: false,
+        aggregateInsights: false,
       },
     };
 

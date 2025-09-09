@@ -4,19 +4,19 @@ import { generateTokenWarning, TOKEN_THRESHOLDS, CONTEXT_MANAGEMENT_INSTRUCTIONS
 
 export const searchContentTool: Tool = {
   name: "search_content",
-  description: "Advanced search with OR/ANY logic, fuzzy matching, and smart filters. Supports multiple search modes, content type filtering, date ranges, and relevance explanations.",
+  description: "Advanced search using vector embeddings, full-text, or hybrid search. Leverages semantic similarity for concept-based matching beyond keywords.",
   inputSchema: {
     type: "object",
     properties: {
       query: {
         type: "string",
-        description: "Search query (supports 'term1 OR term2' for any match, quotes for exact phrases)",
+        description: "Search query (natural language works best for semantic search)",
       },
       searchMode: {
         type: "string",
-        enum: ["any", "all", "phrase"],
-        description: "Search logic: 'any' (OR logic), 'all' (AND logic), 'phrase' (exact phrase)",
-        default: "any",
+        enum: ["smart", "semantic", "hybrid", "any", "all", "phrase"],
+        description: "Search mode: 'smart' (auto-select best), 'semantic' (vector embeddings), 'hybrid' (combined), 'any' (OR), 'all' (AND), 'phrase' (exact)",
+        default: "smart",
       },
       fuzzyMatch: {
         type: "boolean",
@@ -80,7 +80,7 @@ export const searchContentTool: Tool = {
   handler: async (client, args) => {
     const schema = z.object({
       query: z.string(),
-      searchMode: z.enum(["any", "all", "phrase"]).optional().default("any"),
+      searchMode: z.enum(["smart", "semantic", "hybrid", "any", "all", "phrase"]).optional().default("smart"),
       fuzzyMatch: z.boolean().optional().default(true),
       tags: z.array(z.string()).optional(),
       limit: z.number().optional().default(10),
@@ -104,10 +104,27 @@ export const searchContentTool: Tool = {
       }
     }
     
-    const results = await client.searchContent(enhancedQuery, {
-      ...params,
-      enableConceptExpansion: params.fuzzyMatch, // Use fuzzy matching as concept expansion
-    });
+    // Map the searchMode to options that the client understands
+    const searchOptions: any = {
+      tags: params.tags,
+      limit: params.limit,
+      includeFullContent: params.includeFullContent,
+      contentTypes: params.contentTypes,
+      dateFrom: params.dateFrom,
+      dateTo: params.dateTo,
+      excludeDomains: params.excludeDomains,
+      fuzzyMatch: params.fuzzyMatch,
+      enableConceptExpansion: params.fuzzyMatch,
+    };
+    
+    // Add searchMode if it's a legacy mode (any, all, phrase)
+    if (params.searchMode === "any" || params.searchMode === "all" || params.searchMode === "phrase") {
+      searchOptions.searchMode = params.searchMode;
+    } else if (params.searchMode === "semantic") {
+      searchOptions.enableConceptExpansion = true;
+    }
+    
+    const results = await client.searchContent(enhancedQuery, searchOptions);
     
     // Calculate total token count if including full content
     let totalTokens = 0;
@@ -162,7 +179,18 @@ export const searchContentTool: Tool = {
     
     // Format response with visual indicators
     let responseText = `# 🔍 Search Results: "${params.query}"\n`;
-    responseText += `**Mode:** ${params.searchMode.toUpperCase()}${params.fuzzyMatch ? " with fuzzy matching" : ""}\n`;
+    
+    // Better mode descriptions
+    const modeDescriptions: Record<string, string> = {
+      smart: "🧠 Smart (auto-selecting best strategy)",
+      semantic: "🎯 Semantic (vector embeddings for concept matching)",
+      hybrid: "🔀 Hybrid (combining vector + keyword search)",
+      any: "📝 Any match (OR logic)",
+      all: "✅ All match (AND logic)",
+      phrase: "💬 Exact phrase"
+    };
+    
+    responseText += `**Mode:** ${modeDescriptions[params.searchMode] || params.searchMode.toUpperCase()}\n`;
     responseText += `**Found:** ${results.length} results`;
     
     // Show active filters

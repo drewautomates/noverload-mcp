@@ -31,15 +31,21 @@ export const batchGetContentTool: Tool = {
     const params = schema.parse(args);
     const result = await client.batchGetContent(params.ids, params.includeFullContent);
     
+    // The v2 endpoint returns { success, contents, metadata }
+    const contents = result.contents || result.results || result;
+    const resultCount = Array.isArray(contents) ? contents.length : 0;
+    
     let responseText = `# Batch Content Fetch\n\n`;
     responseText += `Requested: ${params.ids.length} items\n`;
-    responseText += `Found: ${result.metadata?.found || 0} items\n`;
+    responseText += `Found: ${resultCount} items\n`;
     
     // Calculate and warn about total tokens
     let totalTokens = 0;
-    if (result.results && result.results.length > 0) {
-      result.results.forEach((item: any) => {
-        if (item.tokenCount) totalTokens += item.tokenCount;
+    if (contents && Array.isArray(contents) && contents.length > 0) {
+      contents.forEach((item: any) => {
+        if (item.tokenCount || item.token_count) {
+          totalTokens += item.tokenCount || item.token_count;
+        }
       });
     }
     
@@ -64,29 +70,39 @@ export const batchGetContentTool: Tool = {
     
     responseText += `\n`;
     
-    if (result.results && result.results.length > 0) {
-      result.results.forEach((item: any, idx: number) => {
+    if (contents && Array.isArray(contents) && contents.length > 0) {
+      contents.forEach((item: any, idx: number) => {
         if (item.error) {
           responseText += `## ${idx + 1}. Error: ${item.id}\n`;
           responseText += `${item.error}\n\n`;
         } else {
+          // Handle different field name variations from the API
+          const contentType = item.contentType || item.type || item.content_type;
+          const tokenCount = item.tokenCount || item.token_count;
+          const rawText = item.rawText || item.raw_text;
+          
           responseText += `## ${idx + 1}. ${item.title || "Untitled"}\n`;
           responseText += `**ID:** ${item.id}\n`;
-          responseText += `**Type:** ${item.contentType} | **URL:** ${item.url}\n`;
-          if (item.tokenCount) {
-            responseText += `**Tokens:** ${item.tokenCount.toLocaleString()}`;
-            if (item.tokenCount > 10000) responseText += ` ⚠️`;
+          responseText += `**Type:** ${contentType} | **URL:** ${item.url}\n`;
+          if (tokenCount) {
+            responseText += `**Tokens:** ${tokenCount.toLocaleString()}`;
+            if (tokenCount > 10000) responseText += ` ⚠️`;
             responseText += `\n`;
           }
           if (item.summary) {
             responseText += `**Summary:** ${typeof item.summary === "string" ? item.summary : item.summary.one_sentence || "N/A"}\n`;
           }
-          if (params.includeFullContent && item.fullContent) {
-            responseText += `**Content Length:** ${item.metadata?.contentLength || 0} characters\n`;
+          if (params.includeFullContent && rawText) {
+            responseText += `**Content Length:** ${rawText.length || 0} characters\n`;
           }
           responseText += `\n`;
         }
       });
+    } else {
+      responseText += `\n⚠️ No content items were returned. Possible causes:\n`;
+      responseText += `- The IDs may not exist\n`;
+      responseText += `- The content may belong to another user\n`;
+      responseText += `- The IDs format may be incorrect (should be UUIDs)\n`;
     }
     
     return {
@@ -96,7 +112,13 @@ export const batchGetContentTool: Tool = {
           text: responseText,
         },
       ],
-      data: result,
+      data: {
+        results: contents,
+        metadata: result.metadata || {
+          found: resultCount,
+          requested: params.ids.length,
+        },
+      },
     };
   },
 };
