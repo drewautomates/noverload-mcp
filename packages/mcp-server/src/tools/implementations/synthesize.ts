@@ -58,30 +58,45 @@ export const synthesizeContentTool: Tool = {
     // Handle the API v2 response format
     const synthesis = result.synthesis || result;
     const metadata = result.metadata || {};
-    const sources = result.sources || [];
-    
+    const sources = metadata.sources || result.sources || [];
+
     let responseText = `# 🎯 Synthesis: "${params.query}"\n`;
     responseText += `**Mode:** ${synthesis.mode || params.synthesisMode} | **Sources:** ${metadata.sourceCount || sources.length}`;
-    
-    // Add confidence indicator if available
-    if (metadata.confidence) {
-      const confidenceIcon = metadata.confidence >= 80 ? "🟢" : metadata.confidence >= 60 ? "🟡" : "🔴";
-      responseText += ` | **Confidence:** ${confidenceIcon} ${metadata.confidence}%`;
+
+    // Add confidence indicator - check multiple possible locations
+    const confidenceValue = metadata.confidence ||
+      (synthesis.confidence?.overall ? Math.round(synthesis.confidence.overall * 100) : null);
+    if (confidenceValue) {
+      const confidenceIcon = confidenceValue >= 80 ? "🟢" : confidenceValue >= 60 ? "🟡" : "🔴";
+      responseText += ` | **Confidence:** ${confidenceIcon} ${confidenceValue}%`;
     }
     responseText += `\n\n`;
-    
-    // Summary Section
-    if (synthesis.summary) {
-      responseText += `## 📋 Summary\n${synthesis.summary}\n\n`;
+
+    // Summary Section - check multiple possible field names
+    const summaryText = synthesis.summary || synthesis.executiveSummary;
+    if (summaryText) {
+      responseText += `## 📋 Summary\n${summaryText}\n\n`;
     }
-    
-    // Insights Section (most important)
-    if (synthesis.insights && synthesis.insights.length > 0) {
+
+    // Insights Section - check multiple possible formats
+    const insights = synthesis.insights || synthesis.actionableInsights || [];
+    if (insights.length > 0) {
       responseText += `## 💡 Key Insights\n`;
-      synthesis.insights.forEach((insight: any, idx: number) => {
-        // Handle both string and object insights
+      insights.forEach((insight: any, idx: number) => {
+        // Handle various insight formats
         if (typeof insight === 'string') {
           responseText += `${idx + 1}. ${insight}\n`;
+        } else if (insight.insight) {
+          // Format from actionableInsights
+          const priorityIcon = insight.priority === "high" ? "🔴" : insight.priority === "medium" ? "🟡" : "🟢";
+          responseText += `${idx + 1}. ${priorityIcon} **${insight.insight}**`;
+          if (insight.category) {
+            responseText += ` *(${insight.category})*`;
+          }
+          responseText += `\n`;
+          if (insight.supportingEvidence && insight.supportingEvidence.length > 0) {
+            responseText += `   - Evidence: ${insight.supportingEvidence[0]}\n`;
+          }
         } else if (insight.text) {
           responseText += `${idx + 1}. **${insight.text}**`;
           if (insight.sourceTitle) {
@@ -92,22 +107,36 @@ export const synthesizeContentTool: Tool = {
       });
       responseText += `\n`;
     }
-    
-    // Action Plan (for actionable mode)
-    if (synthesis.actionPlan) {
+
+    // Key Themes (from enhanced synthesis)
+    if (synthesis.keyThemes && synthesis.keyThemes.length > 0) {
+      responseText += `## 🎨 Key Themes\n`;
+      synthesis.keyThemes.forEach((theme: any, idx: number) => {
+        responseText += `${idx + 1}. **${theme.theme}** (${theme.frequency} sources)\n`;
+        if (theme.insight) {
+          responseText += `   - ${theme.insight}\n`;
+        }
+      });
+      responseText += `\n`;
+    }
+
+    // Action Plan - check multiple formats
+    const actionPlan = synthesis.actionPlan;
+    const nextSteps = synthesis.recommendedNextSteps || [];
+    if (actionPlan || nextSteps.length > 0) {
       responseText += `## 🚀 Action Plan\n`;
-      
-      if (synthesis.actionPlan.summary) {
-        responseText += `${synthesis.actionPlan.summary}\n\n`;
+
+      if (actionPlan?.summary) {
+        responseText += `${actionPlan.summary}\n\n`;
       }
-      
-      if (synthesis.actionPlan.nextAction) {
-        responseText += `**🎯 Next Action:** ${synthesis.actionPlan.nextAction.action || synthesis.actionPlan.nextAction}\n\n`;
+
+      if (actionPlan?.nextAction) {
+        responseText += `**🎯 Next Action:** ${actionPlan.nextAction.action || actionPlan.nextAction}\n\n`;
       }
-      
-      if (synthesis.actionPlan.steps && synthesis.actionPlan.steps.length > 0) {
+
+      if (actionPlan?.steps && actionPlan.steps.length > 0) {
         responseText += `### Steps\n`;
-        synthesis.actionPlan.steps.forEach((step: any, idx: number) => {
+        actionPlan.steps.forEach((step: any, idx: number) => {
           const priorityIcon = step.priority === "high" ? "🔴" : step.priority === "medium" ? "🟡" : "🟢";
           responseText += `${idx + 1}. ${priorityIcon} **${step.action}**`;
           if (step.timeframe) {
@@ -119,6 +148,24 @@ export const synthesizeContentTool: Tool = {
           responseText += `\n`;
         });
       }
+
+      // recommendedNextSteps from enhanced synthesis
+      if (nextSteps.length > 0) {
+        responseText += `${nextSteps.length} actionable steps identified\n`;
+        nextSteps.forEach((step: string, idx: number) => {
+          responseText += `${idx + 1}. ${step}\n`;
+        });
+      }
+      responseText += `\n`;
+    }
+
+    // Knowledge Gaps (from enhanced synthesis)
+    if (synthesis.knowledgeGaps && synthesis.knowledgeGaps.length > 0) {
+      responseText += `## ❓ Knowledge Gaps\n`;
+      responseText += `Consider researching:\n`;
+      synthesis.knowledgeGaps.forEach((gap: string) => {
+        responseText += `- ${gap}\n`;
+      });
       responseText += `\n`;
     }
     

@@ -1,6 +1,6 @@
 {
   "name": "noverload-mcp",
-  "version": "0.7.7",
+  "version": "0.8.2",
   "description": "Model Context Protocol server for Noverload - Access your saved content in AI tools",
   "private": true,
   "workspaces": [

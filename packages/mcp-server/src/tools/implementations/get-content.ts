@@ -53,35 +53,54 @@ export const getContentDetailsTool: Tool = {
     }
     
     responseText += '\n## Summary & Insights\n';
-    
+
     if (content.summary) {
-      const summaryObj = typeof content.summary === 'string' 
-        ? { text: content.summary } 
-        : content.summary;
-      
-      if (summaryObj.one_sentence) {
-        responseText += `**One-line Summary:** ${summaryObj.one_sentence}\n\n`;
+      // Handle both string and object summaries
+      if (typeof content.summary === 'string') {
+        // Plain string summary - display it directly
+        responseText += `**Summary:** ${content.summary}\n\n`;
+      } else {
+        // Structured summary object
+        const summaryObj = content.summary;
+
+        if (summaryObj.one_sentence) {
+          responseText += `**One-line Summary:** ${summaryObj.one_sentence}\n\n`;
+        }
+
+        // Also check for 'text' field (common alternative)
+        if (summaryObj.text && !summaryObj.one_sentence) {
+          responseText += `**Summary:** ${summaryObj.text}\n\n`;
+        }
+
+        if (summaryObj.key_insights && Array.isArray(summaryObj.key_insights)) {
+          responseText += `**Key Insights:**\n`;
+          summaryObj.key_insights.forEach((insight: string, idx: number) => {
+            responseText += `${idx + 1}. ${insight}\n`;
+          });
+          responseText += '\n';
+        }
+
+        if (summaryObj.main_topics && Array.isArray(summaryObj.main_topics)) {
+          responseText += `**Main Topics:** ${summaryObj.main_topics.join(', ')}\n\n`;
+        }
+
+        if (summaryObj.actionable_takeaways && Array.isArray(summaryObj.actionable_takeaways)) {
+          responseText += `**Actionable Takeaways:**\n`;
+          summaryObj.actionable_takeaways.forEach((takeaway: string, idx: number) => {
+            responseText += `${idx + 1}. ${takeaway}\n`;
+          });
+          responseText += '\n';
+        }
       }
-      
-      if (summaryObj.key_insights && Array.isArray(summaryObj.key_insights)) {
-        responseText += `**Key Insights:**\n`;
-        summaryObj.key_insights.forEach((insight: string, idx: number) => {
-          responseText += `${idx + 1}. ${insight}\n`;
-        });
-        responseText += '\n';
-      }
-      
-      if (summaryObj.main_topics && Array.isArray(summaryObj.main_topics)) {
-        responseText += `**Main Topics:** ${summaryObj.main_topics.join(', ')}\n\n`;
-      }
-      
-      if (summaryObj.actionable_takeaways && Array.isArray(summaryObj.actionable_takeaways)) {
-        responseText += `**Actionable Takeaways:**\n`;
-        summaryObj.actionable_takeaways.forEach((takeaway: string, idx: number) => {
-          responseText += `${idx + 1}. ${takeaway}\n`;
-        });
-        responseText += '\n';
-      }
+    }
+
+    // Show key insights from the API if available (separate from summary object)
+    if (content.keyInsights && Array.isArray(content.keyInsights) && content.keyInsights.length > 0) {
+      responseText += `**Key Insights:**\n`;
+      content.keyInsights.forEach((insight: string, idx: number) => {
+        responseText += `${idx + 1}. ${insight}\n`;
+      });
+      responseText += '\n';
     }
     
     // Check if content is large and needs warning

@@ -74,33 +74,68 @@ export const exploreTopicTool: Tool = {
       findContradictions: true,
     });
     
+    // Handle response format - synthesis might be nested or flat
+    const synthData = synthesis.synthesis || synthesis;
+
     let responseText = `# 🔍 Topic Exploration: "${params.topic}"\n`;
     responseText += `**Depth:** ${params.depth} | **Sources Analyzed:** ${searchResults.length}\n\n`;
-    
-    // Overview Section
+
+    // Overview Section - check multiple possible field names
+    const overviewText = synthData.summary || synthData.executiveSummary;
     responseText += `## 📋 Overview\n`;
-    if (synthesis.synthesis?.summary) {
-      responseText += `${synthesis.synthesis.summary}\n\n`;
+    if (overviewText) {
+      responseText += `${overviewText}\n\n`;
     } else {
       responseText += `Analysis of ${searchResults.length} pieces of content about ${params.topic}.\n\n`;
     }
-    
-    // Key Insights
-    if (synthesis.synthesis?.insights && synthesis.synthesis.insights.length > 0) {
+
+    // Key Insights - check multiple possible field names
+    const insights = synthData.insights || synthData.actionableInsights || [];
+    if (insights.length > 0) {
       responseText += `## 💡 Key Insights\n`;
-      synthesis.synthesis.insights.slice(0, 10).forEach((insight: any, idx: number) => {
-        const text = typeof insight === 'string' ? insight : insight.text;
-        responseText += `${idx + 1}. ${text}\n`;
+      insights.slice(0, 10).forEach((insight: any, idx: number) => {
+        if (typeof insight === 'string') {
+          responseText += `${idx + 1}. ${insight}\n`;
+        } else if (insight.insight) {
+          // Format from actionableInsights
+          responseText += `${idx + 1}. **${insight.insight}**`;
+          if (insight.category) {
+            responseText += ` *(${insight.category})*`;
+          }
+          responseText += `\n`;
+        } else if (insight.text) {
+          responseText += `${idx + 1}. ${insight.text}\n`;
+        }
       });
       responseText += `\n`;
     }
-    
-    // Connections (if found)
-    if (params.includeConnections && synthesis.synthesis?.connections) {
+
+    // Key Themes (from enhanced synthesis)
+    if (synthData.keyThemes && synthData.keyThemes.length > 0) {
+      responseText += `## 🎨 Key Themes\n`;
+      synthData.keyThemes.slice(0, 5).forEach((theme: any, idx: number) => {
+        responseText += `${idx + 1}. **${theme.theme}** (${theme.frequency} sources)\n`;
+        if (theme.insight) {
+          responseText += `   - ${theme.insight}\n`;
+        }
+      });
+      responseText += `\n`;
+    }
+
+    // Connections (if found) - check multiple possible field names
+    const connections = synthData.connections || [];
+    if (params.includeConnections && connections.length > 0) {
       responseText += `## 🔗 Related Topics & Connections\n`;
-      synthesis.synthesis.connections.slice(0, 8).forEach((conn: any) => {
+      connections.slice(0, 8).forEach((conn: any) => {
         if (typeof conn === 'string') {
           responseText += `- ${conn}\n`;
+        } else if (conn.pattern) {
+          // Format from enhanced synthesis
+          responseText += `- **${conn.pattern}**`;
+          if (conn.implication) {
+            responseText += `: ${conn.implication}`;
+          }
+          responseText += `\n`;
         } else if (conn.concept) {
           responseText += `- **${conn.concept}**`;
           if (conn.strength) {
@@ -108,6 +143,15 @@ export const exploreTopicTool: Tool = {
           }
           responseText += `\n`;
         }
+      });
+      responseText += `\n`;
+    }
+
+    // Knowledge Gaps
+    if (synthData.knowledgeGaps && synthData.knowledgeGaps.length > 0) {
+      responseText += `## ❓ Areas to Explore Further\n`;
+      synthData.knowledgeGaps.slice(0, 5).forEach((gap: string) => {
+        responseText += `- ${gap}\n`;
       });
       responseText += `\n`;
     }
@@ -137,7 +181,7 @@ export const exploreTopicTool: Tool = {
         topic: params.topic,
         depth: params.depth,
         sourcesAnalyzed: searchResults.length,
-        synthesis: synthesis.synthesis,
+        synthesis: synthData,
         sources: searchResults,
       },
     };
