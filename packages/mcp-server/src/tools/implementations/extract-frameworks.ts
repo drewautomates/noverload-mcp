@@ -105,7 +105,11 @@ export const extractFrameworksTool: Tool = {
         maxSources: 30,
       });
 
-      if (!synthesisResult.insights || synthesisResult.insights.length === 0) {
+      // Handle multiple possible response formats
+      const synthData = synthesisResult.synthesis || synthesisResult;
+      const insights = synthData.insights || synthData.actionableInsights || synthesisResult.insights || synthesisResult.actionableInsights || [];
+
+      if (!insights || insights.length === 0) {
         return {
           content: [
             {
@@ -124,8 +128,8 @@ export const extractFrameworksTool: Tool = {
       // Extract frameworks from synthesis insights
       const allFrameworks: Framework[] = [];
       const frameworkPattern = /(?:framework|methodology|process|approach|system|technique|method|strategy):\s*(.+)/i;
-      
-      for (const insight of synthesisResult.insights) {
+
+      for (const insight of insights) {
         // Check if this insight describes a framework
         const text = typeof insight === 'string' ? insight : (insight as any).text || (insight as any).insight;
         const source = typeof insight === 'object' ? (insight as any).source : null;

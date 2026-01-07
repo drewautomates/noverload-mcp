@@ -1,107 +1,70 @@
 import { Tool } from "./types.js";
 
-// Import all tool implementations
+// CORE TOOLS - Focused minimal set (10 tools)
+// Based on user feedback: "Noverload handles storage and retrieval. LLM handles thinking."
 import { listSavedContentTool } from "./implementations/list-content.js";
 import { getContentDetailsTool } from "./implementations/get-content.js";
 import { searchContentTool } from "./implementations/search.js";
 import { saveContentTool } from "./implementations/save-content.js";
+import { batchGetContentTool } from "./implementations/batch-get.js";
+import { exploreTopicTool } from "./implementations/explore-topic.js";
+import { extractFrameworksTool } from "./implementations/extract-frameworks.js";
 import { listActionsTool, completeActionTool } from "./implementations/actions.js";
 import { listGoalsTool } from "./implementations/goals.js";
-import { estimateSearchTokensTool } from "./implementations/estimate-tokens.js";
-import { synthesizeContentTool } from "./implementations/synthesize.js";
-import { findSimilarContentTool } from "./implementations/similar-content.js";
-import { batchGetContentTool } from "./implementations/batch-get.js";
-import { getInstructionsTool } from "./implementations/instructions.js";
-import { planQueryTool } from "./implementations/plan-query.js";
-import { getRawContentTool } from "./implementations/raw-content.js";
-import { exploreTopicTool } from "./implementations/explore-topic.js";
-import { findConnectionsTool } from "./implementations/find-connections.js";
-import { extractInsightsTool } from "./implementations/extract-insights.js";
-import { getTimelineTool } from "./implementations/timeline.js";
-import { buildKnowledgeGraphTool } from "./implementations/knowledge-graph.js";
-import { extractFrameworksTool } from "./implementations/extract-frameworks.js";
-import { expandSearchTool } from "./implementations/expand-search.js";
-import { smartSectionsTool } from "./implementations/smart-sections.js";
 
-// ARCHIVED - IN DEVELOPMENT
-// These tools need more work before being production-ready
-// import { findExamplesTool } from "./implementations/find-examples.js";
-// import { buildNarrativeTool } from "./implementations/build-narrative.js";
+// ARCHIVED TOOLS (in _archived/ folder for potential future use):
+// - synthesize.ts: explore_topic does this better
+// - extract-insights.ts: LLMs can extract insights from raw content
+// - knowledge-graph.ts: Limited results, LLMs can map relationships
+// - smart-sections.ts: Content extraction issues
+// - raw-content.ts: Redundant with get-content.ts
+// - find-connections.ts: LLMs can find connections
+// - expand-search.ts: LLMs can reformulate queries
+// - plan-query.ts: LLMs can plan queries
+// - estimate-tokens.ts: Nice-to-have but not essential
+// - instructions.ts: Guidance now in MCP system prompt
+// - similar-content.ts: search_content covers most cases
+// - timeline.ts: Niche use case
 
 // Export all tools as a single array
 export const tools: Tool[] = [
-  // CORE TOOLS - Optimized for LLM context provision
-  
-  // Content retrieval and listing
+  // 1. Discovery: "What do I have?"
   listSavedContentTool,
-  getContentDetailsTool,  // Now returns FULL content for context
-  getRawContentTool,
-  batchGetContentTool,
-  
-  // Search and discovery
+
+  // 2. Search: "Find relevant content" (RAG-powered)
   searchContentTool,
-  findSimilarContentTool,
-  expandSearchTool,
-  
-  // Analysis and synthesis
-  synthesizeContentTool,
+
+  // 3. Retrieval: "Give me this article" (includes full content)
+  getContentDetailsTool,
+
+  // 4. Batch Retrieval: "Give me these articles"
+  batchGetContentTool,
+
+  // 5. Synthesis: "Explore topic X" (context-efficient pre-processed insights)
   exploreTopicTool,
-  findConnectionsTool,
-  extractInsightsTool,
-  getTimelineTool,
-  buildKnowledgeGraphTool,
-  extractFrameworksTool,  // Fixed to use synthesis API
-  
-  // ARCHIVED - IN DEVELOPMENT
-  // findExamplesTool,     // Needs database schema updates
-  // buildNarrativeTool,   // Needs refinement
-  
-  // Actions and goals
+
+  // 6. Frameworks: "Extract methodologies and frameworks"
+  extractFrameworksTool,
+
+  // 7. Save: "Save this URL"
+  saveContentTool,
+
+  // 8-10. Actions and goals
   listActionsTool,
   completeActionTool,
   listGoalsTool,
-  
-  // Content management
-  saveContentTool,
-  smartSectionsTool,
-  
-  // Utility and planning
-  estimateSearchTokensTool,
-  getInstructionsTool,
-  planQueryTool,
 ];
 
-// Export individual tools for testing or specific usage
+// Export individual tools for testing
 export {
-  // Core content tools
   listSavedContentTool,
   getContentDetailsTool,
   searchContentTool,
   saveContentTool,
-  
-  // Actions and goals
+  batchGetContentTool,
+  exploreTopicTool,
+  extractFrameworksTool,
   listActionsTool,
   completeActionTool,
   listGoalsTool,
-  
-  // Analysis tools
-  estimateSearchTokensTool,
-  synthesizeContentTool,
-  findSimilarContentTool,
-  batchGetContentTool,
-  getInstructionsTool,
-  planQueryTool,
-  getRawContentTool,
-  exploreTopicTool,
-  findConnectionsTool,
-  extractInsightsTool,
-  getTimelineTool,
-  buildKnowledgeGraphTool,
-  extractFrameworksTool,
-  expandSearchTool,
-  smartSectionsTool,
-  
-  // ARCHIVED - Available for testing but not in production
-  // findExamplesTool,
-  // buildNarrativeTool,
 };

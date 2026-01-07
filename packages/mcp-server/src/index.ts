@@ -33,35 +33,55 @@ async function main() {
   // Provide instructions for LLMs on context management
   const instructions = `Noverload MCP: Smart knowledge management with context-aware retrieval.
 
-## Available Tools
+## Philosophy
+Noverload handles storage and retrieval. You handle thinking.
+Use these tools to GET content, then apply your reasoning to analyze, connect, and synthesize.
+
+## Available Tools (${tools?.length || 0})
 ${tools && tools.length > 0 ? tools.map((t) => t.name).join(", ") : "none"}
 
-## IMPORTANT: Context Management Guidelines
+## When to Use Each Tool
 
-### Token Usage Awareness
-- list_saved_content: Returns summaries only (low token usage)
-- search_content: Use includeFullContent=true carefully (can be 10k-100k+ tokens)
-- get_content_details: Full content retrieval - check token count first
-- batch_get_content: Be selective with IDs to avoid context overflow
+| Tool | Use When |
+|------|----------|
+| list_saved_content | "What do I have?" - Discovery and browsing |
+| search_content | "Find content about X" - RAG-powered semantic search |
+| get_content_details | "Give me this article" - Full content retrieval |
+| batch_get_content | "Give me these 3 articles" - Multi-content retrieval |
+| explore_topic | "Synthesize insights on X" - Pre-processed, context-efficient |
+| extract_frameworks | "What methodologies exist for X?" - Extract processes/frameworks |
+| save_content | "Save this URL" - Add new content |
+| list_actions | View extracted action items |
+| complete_action | Mark action as done |
+| list_goals | View user's goals |
 
-### Best Practices for LLMs
-1. Start with search or list to find relevant content
-2. Use summaries first, then fetch full content only when needed
-3. For content >50k tokens, warn users before retrieval
-4. Suggest filters/limits when users request broad searches
-5. Use smart_sections for extracting specific parts of large documents
+## Recommended Workflows
 
-### Warning Thresholds
-- <10k tokens: Safe for most operations
-- 10k-50k tokens: Warn about large content
-- >50k tokens: Require acceptLargeContent=true parameter
+**Quick question about saved content:**
+1. search_content → find relevant items
+2. get_content_details → get full text for top result
+3. Apply your reasoning to answer
 
-Remember: Efficient context usage enables better conversations!`;
+**Deep research on a topic:**
+1. explore_topic → get pre-synthesized insights (context-efficient!)
+2. If needed, get_content_details on specific sources for quotes/details
+
+**Find frameworks or methodologies:**
+1. extract_frameworks → returns structured processes from content
+
+## Token Management
+- list_saved_content: ~150 tokens per item (summaries only)
+- search_content: ~200 tokens per result (or 10k+ with includeFullContent)
+- get_content_details: Shows token count - warn user if >50k
+- explore_topic: Context-efficient - returns synthesized insights, not raw text
+
+## Key Principle
+Start with search or explore_topic. Only fetch full content when you need exact quotes or deep analysis.`;
 
   const server = new McpServer(
     {
       name: "noverload-mcp",
-      version: "0.7.2",
+      version: "0.9.0",
     },
     {
       capabilities: {

@@ -547,18 +547,36 @@ export class NoverloadClient {
     try {
       // If no content IDs provided, search for relevant content first
       let sourceIds = params.contentIds;
-      
+
       if (!sourceIds || sourceIds.length === 0) {
-        // Search for content related to the query
+        // Search for content related to the query using multiple strategies
+        console.log(`[Synthesis] No contentIds provided, searching for: "${params.query}"`);
+
+        // Try semantic search first
         const searchResults = await this.searchContent(params.query, {
-          limit: params.maxSources || 5,
+          limit: params.maxSources || 10,
           enableConceptExpansion: true,
         });
-        
+
         if (searchResults && searchResults.length > 0) {
           sourceIds = searchResults.map((item: any) => item.id).filter((id: any) => id);
+          console.log(`[Synthesis] Found ${sourceIds?.length || 0} sources via search`);
         }
-        
+
+        // If search found nothing, try getting recent content as fallback
+        if (!sourceIds || sourceIds.length === 0) {
+          console.log("[Synthesis] Search returned no results, trying recent content");
+          try {
+            const recentContent = await this.listContent({ limit: params.maxSources || 5 });
+            if (recentContent && recentContent.length > 0) {
+              sourceIds = recentContent.map((item: any) => item.id).filter((id: any) => id);
+              console.log(`[Synthesis] Using ${sourceIds.length} recent content items`);
+            }
+          } catch (e) {
+            console.warn("[Synthesis] Failed to get recent content:", e);
+          }
+        }
+
         if (!sourceIds || sourceIds.length === 0) {
           return {
             success: false,
@@ -567,15 +585,26 @@ export class NoverloadClient {
           };
         }
       }
-      
+
+      // Map synthesis modes from client to API format
+      // Client uses: "overview" | "deep" | "actionable" | "comparison"
+      // API expects: "overview" | "actionable" | "comparative" | "thematic"
+      const modeMap: Record<string, string> = {
+        "overview": "overview",
+        "deep": "thematic", // deep maps to thematic for comprehensive analysis
+        "actionable": "actionable",
+        "comparison": "comparative", // comparison -> comparative
+      };
+      const apiMode = modeMap[params.synthesisMode || "actionable"] || "actionable";
+
       // Try v2 synthesis endpoint
       const v2Body = {
         sources: {
           contentIds: sourceIds,
-          limit: params.maxSources || 5,
+          limit: params.maxSources || 10,
         },
         synthesis: {
-          mode: params.synthesisMode || "actionable",
+          mode: apiMode,
           depth: "standard",
         },
         output: {
@@ -585,6 +614,8 @@ export class NoverloadClient {
           includeActionPlan: params.synthesisMode === "actionable",
         },
       };
+
+      console.log(`[Synthesis] Sending request with ${sourceIds.length} sources, mode: ${apiMode}`);
 
       const response = await this.request("/api/mcp/v2/synthesis", {
         method: "POST",

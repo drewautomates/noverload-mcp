@@ -365,7 +365,7 @@ export const smartSectionsTool: Tool = {
 
     try {
       // Get the content
-      const content = await client.getContent(input.contentId);
+      let content = await client.getContent(input.contentId);
 
       if (!content) {
         return {
@@ -379,15 +379,28 @@ export const smartSectionsTool: Tool = {
         };
       }
 
-      // Get the raw text for sectioning
-      const rawText = content.rawText || "";
+      // Get the raw text for sectioning - try enriched API if not available
+      let rawText = content.rawText || "";
+
+      if (!rawText) {
+        // Try to get raw content through v2 API with enrichment
+        try {
+          const enrichedResult = await client.getEnrichedContent([input.contentId], true);
+          if (enrichedResult && enrichedResult.length > 0 && enrichedResult[0].rawText) {
+            rawText = enrichedResult[0].rawText;
+            content = { ...content, rawText };
+          }
+        } catch (e) {
+          // Ignore enrichment errors, continue with what we have
+        }
+      }
 
       if (!rawText) {
         return {
           content: [
             {
               type: "text",
-              text: `⚠️ No text content available for sectioning in this item.`,
+              text: `⚠️ No text content available for sectioning in this item. The content may still be processing or does not contain extractable text.`,
             },
           ],
           data: {

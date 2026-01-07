@@ -93,7 +93,9 @@ export const batchGetContentTool: Tool = {
             responseText += `**Summary:** ${typeof item.summary === "string" ? item.summary : item.summary.one_sentence || "N/A"}\n`;
           }
           if (params.includeFullContent && rawText) {
-            responseText += `**Content Length:** ${rawText.length || 0} characters\n`;
+            responseText += `\n**Full Content:**\n`;
+            responseText += rawText;
+            responseText += `\n`;
           }
           responseText += `\n`;
         }

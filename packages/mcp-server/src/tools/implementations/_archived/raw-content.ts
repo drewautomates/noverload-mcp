@@ -153,9 +153,11 @@ export const getRawContentTool: Tool = {
     
     if (params.format === "full") {
       // Return full text (with confirmation)
-      responseText += `\n## Full Text Content\n`;
-      responseText += `*Complete raw text (${estimatedTokens.toLocaleString()} tokens) is available in the data field.*\n`;
-      
+      responseText += `\n## Full Text Content\n\n`;
+      // Actually include the content in the response
+      responseText += content.rawText || "";
+      responseText += `\n`;
+
       resultData.text = content.rawText;
       resultData.metadata = params.includeMetadata ? {
         wordCount,
