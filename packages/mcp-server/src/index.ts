@@ -81,7 +81,7 @@ Start with search or explore_topic. Only fetch full content when you need exact 
   const server = new McpServer(
     {
       name: "noverload-mcp",
-      version: "0.9.0",
+      version: "0.9.1",
     },
     {
       capabilities: {

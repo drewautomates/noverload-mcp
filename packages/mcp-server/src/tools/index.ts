@@ -1,6 +1,6 @@
 import { Tool } from "./types.js";
 
-// CORE TOOLS - Focused minimal set (10 tools)
+// CORE TOOLS - Focused minimal set
 // Based on user feedback: "Noverload handles storage and retrieval. LLM handles thinking."
 import { listSavedContentTool } from "./implementations/list-content.js";
 import { getContentDetailsTool } from "./implementations/get-content.js";
@@ -11,6 +11,11 @@ import { exploreTopicTool } from "./implementations/explore-topic.js";
 import { extractFrameworksTool } from "./implementations/extract-frameworks.js";
 import { listActionsTool, completeActionTool } from "./implementations/actions.js";
 import { listGoalsTool } from "./implementations/goals.js";
+
+// TAG TOOLS - For swipe file and content organization workflows
+import { listTagsTool } from "./implementations/list-tags.js";
+import { addTagsTool, removeTagsTool, createTagTool } from "./implementations/manage-tags.js";
+import { markAsSwipeFileTool, unmarkSwipeFileTool } from "./implementations/swipe-file.js";
 
 // ARCHIVED TOOLS (in _archived/ folder for potential future use):
 // - synthesize.ts: explore_topic does this better
@@ -46,13 +51,23 @@ export const tools: Tool[] = [
   // 6. Frameworks: "Extract methodologies and frameworks"
   extractFrameworksTool,
 
-  // 7. Save: "Save this URL"
+  // 7. Save: "Save this URL" (now with optional tags)
   saveContentTool,
 
   // 8-10. Actions and goals
   listActionsTool,
   completeActionTool,
   listGoalsTool,
+
+  // 11-14. Tag management (for swipe file workflows)
+  listTagsTool,
+  createTagTool,
+  addTagsTool,
+  removeTagsTool,
+
+  // 15-16. Swipe file management (mark content for craft analysis)
+  markAsSwipeFileTool,
+  unmarkSwipeFileTool,
 ];
 
 // Export individual tools for testing
@@ -67,4 +82,10 @@ export {
   listActionsTool,
   completeActionTool,
   listGoalsTool,
+  listTagsTool,
+  createTagTool,
+  addTagsTool,
+  removeTagsTool,
+  markAsSwipeFileTool,
+  unmarkSwipeFileTool,
 };

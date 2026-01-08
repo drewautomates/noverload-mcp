@@ -29,14 +29,14 @@ export const ContentSchema = z.object({
 
 export const ActionSchema = z.object({
   id: z.string(),
-  contentId: z.string(),
-  goalId: z.string().nullable(),
+  contentId: z.string().optional().default(""),
+  goalId: z.string().nullable().optional().default(null),
   title: z.string(),
-  description: z.string().nullable(),
-  priority: z.enum(["high", "medium", "low"]),
-  completed: z.boolean(),
-  completedAt: z.string().nullable(),
-  createdAt: z.string(),
+  description: z.string().nullable().optional().default(null),
+  priority: z.enum(["high", "medium", "low"]).nullable().optional().default("medium"),
+  completed: z.boolean().optional().default(false),
+  completedAt: z.string().nullable().optional().default(null),
+  createdAt: z.string().optional().default(() => new Date().toISOString()),
 });
 
 export const GoalSchema = z.object({
@@ -49,9 +49,109 @@ export const GoalSchema = z.object({
   createdAt: z.string(),
 });
 
+export const TagSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  isSystem: z.boolean(),
+  description: z.string().nullable().optional(),
+  category: z.string().nullable().optional(),
+  usageCount: z.number().optional().default(0),
+});
+
+export const TagsResponseSchema = z.object({
+  success: z.boolean(),
+  tags: z.array(TagSchema),
+  grouped: z.object({
+    system: z.array(TagSchema),
+    custom: z.array(TagSchema),
+  }).optional(),
+  total: z.number(),
+});
+
+export const CreateTagResponseSchema = z.object({
+  success: z.boolean(),
+  tag: z.object({
+    id: z.string(),
+    name: z.string(),
+    slug: z.string(),
+    isSystem: z.boolean(),
+    isNew: z.boolean().optional(),
+  }),
+  message: z.string().optional(),
+});
+
+export const AddTagsResponseSchema = z.object({
+  success: z.boolean(),
+  contentId: z.string(),
+  addedTags: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    slug: z.string(),
+    created: z.boolean(),
+  })),
+  errors: z.array(z.string()).optional(),
+  message: z.string().optional(),
+});
+
+export const RemoveTagsResponseSchema = z.object({
+  success: z.boolean(),
+  contentId: z.string(),
+  removedTags: z.array(z.string()),
+  errors: z.array(z.string()).optional(),
+  message: z.string().optional(),
+});
+
+// Swipe file response schemas
+export const MarkSwipeFileResponseSchema = z.object({
+  success: z.boolean(),
+  contentId: z.string(),
+  contentTitle: z.string().optional(),
+  isSwipeFile: z.boolean(),
+  analysisTriggered: z.boolean().optional(),
+  analysisError: z.string().optional(),
+  tagsAdded: z.array(z.object({
+    name: z.string(),
+    confidence: z.number(),
+    reason: z.string(),
+  })).optional(),
+  totalTags: z.number().optional(),
+  message: z.string().optional(),
+});
+
+export const UnmarkSwipeFileResponseSchema = z.object({
+  success: z.boolean(),
+  contentId: z.string(),
+  contentTitle: z.string().optional(),
+  isSwipeFile: z.boolean(),
+  message: z.string().optional(),
+});
+
+export const SwipeFileStatusResponseSchema = z.object({
+  success: z.boolean(),
+  contentId: z.string(),
+  contentTitle: z.string().optional(),
+  isSwipeFile: z.boolean(),
+  swipeFileTags: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    slug: z.string(),
+    confidenceScore: z.number().nullable(),
+  })).optional(),
+  totalSwipeFileTags: z.number().optional(),
+});
+
 export type Content = z.infer<typeof ContentSchema>;
 export type Action = z.infer<typeof ActionSchema>;
 export type Goal = z.infer<typeof GoalSchema>;
+export type Tag = z.infer<typeof TagSchema>;
+export type TagsResponse = z.infer<typeof TagsResponseSchema>;
+export type CreateTagResponse = z.infer<typeof CreateTagResponseSchema>;
+export type AddTagsResponse = z.infer<typeof AddTagsResponseSchema>;
+export type RemoveTagsResponse = z.infer<typeof RemoveTagsResponseSchema>;
+export type MarkSwipeFileResponse = z.infer<typeof MarkSwipeFileResponseSchema>;
+export type UnmarkSwipeFileResponse = z.infer<typeof UnmarkSwipeFileResponseSchema>;
+export type SwipeFileStatusResponse = z.infer<typeof SwipeFileStatusResponseSchema>;
 
 export class NoverloadClient {
   private headers: Record<string, string>;
@@ -253,11 +353,25 @@ export class NoverloadClient {
 
     const response = await this.request(`/api/mcp/v2/actions?${params}`);
     if (!response.ok) throw new Error("Failed to fetch actions");
-    
+
     const data = await response.json() as any;
     // v2 returns { success, actions, pagination, statistics }
-    const result = data.actions || data;
-    return z.array(ActionSchema).parse(result);
+    const rawActions = data.actions || data;
+
+    // Transform snake_case to camelCase and handle missing fields
+    const transformedActions = Array.isArray(rawActions) ? rawActions.map((item: any) => ({
+      id: item.id || "",
+      contentId: item.contentId || item.content_id || "",
+      goalId: item.goalId || item.goal_id || null,
+      title: item.title || "Untitled Action",
+      description: item.description || null,
+      priority: item.priority || "medium",
+      completed: item.completed ?? item.is_completed ?? false,
+      completedAt: item.completedAt || item.completed_at || null,
+      createdAt: item.createdAt || item.created_at || new Date().toISOString(),
+    })) : [];
+
+    return z.array(ActionSchema).parse(transformedActions);
   }
 
   async completeAction(id: string): Promise<Action> {
@@ -765,5 +879,192 @@ export class NoverloadClient {
       console.error("Get enriched content error:", error);
       return [];
     }
+  }
+
+  // Tag methods
+  async listTags(): Promise<TagsResponse> {
+    const response = await this.request("/api/mcp/tags");
+
+    if (!response.ok) {
+      let errorMessage = "Failed to fetch tags";
+      try {
+        const errorData = await response.json() as { message?: string; error?: string };
+        if (errorData.message) errorMessage = errorData.message;
+        else if (errorData.error) errorMessage = errorData.error;
+      } catch {
+        errorMessage = `${errorMessage} (HTTP ${response.status})`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    return TagsResponseSchema.parse(data);
+  }
+
+  async createTag(name: string): Promise<CreateTagResponse> {
+    if (this.config.readOnly) {
+      throw new Error("Cannot create tag in read-only mode");
+    }
+
+    const response = await this.request("/api/mcp/tags", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+
+    if (!response.ok) {
+      let errorMessage = `Failed to create tag: ${name}`;
+      try {
+        const errorData = await response.json() as { message?: string; error?: string };
+        if (errorData.message) errorMessage = errorData.message;
+        else if (errorData.error) errorMessage = errorData.error;
+      } catch {
+        errorMessage = `${errorMessage} (HTTP ${response.status})`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    return CreateTagResponseSchema.parse(data);
+  }
+
+  async addTagsToContent(contentId: string, tags: string[]): Promise<AddTagsResponse> {
+    if (this.config.readOnly) {
+      throw new Error("Cannot add tags in read-only mode");
+    }
+
+    const response = await this.request(`/api/mcp/content/${contentId}/tags`, {
+      method: "POST",
+      body: JSON.stringify({ tags }),
+    });
+
+    if (!response.ok) {
+      let errorMessage = "Failed to add tags to content";
+      try {
+        const errorData = await response.json() as { message?: string; error?: string };
+        if (errorData.message) errorMessage = errorData.message;
+        else if (errorData.error) errorMessage = errorData.error;
+      } catch {
+        errorMessage = `${errorMessage} (HTTP ${response.status})`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    return AddTagsResponseSchema.parse(data);
+  }
+
+  async removeTagsFromContent(contentId: string, tags: string[]): Promise<RemoveTagsResponse> {
+    if (this.config.readOnly) {
+      throw new Error("Cannot remove tags in read-only mode");
+    }
+
+    const response = await this.request(`/api/mcp/content/${contentId}/tags`, {
+      method: "DELETE",
+      body: JSON.stringify({ tags }),
+    });
+
+    if (!response.ok) {
+      let errorMessage = "Failed to remove tags from content";
+      try {
+        const errorData = await response.json() as { message?: string; error?: string };
+        if (errorData.message) errorMessage = errorData.message;
+        else if (errorData.error) errorMessage = errorData.error;
+      } catch {
+        errorMessage = `${errorMessage} (HTTP ${response.status})`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    return RemoveTagsResponseSchema.parse(data);
+  }
+
+  async getContentTags(contentId: string): Promise<Tag[]> {
+    const response = await this.request(`/api/mcp/content/${contentId}/tags`);
+
+    if (!response.ok) {
+      let errorMessage = "Failed to get content tags";
+      try {
+        const errorData = await response.json() as { message?: string; error?: string };
+        if (errorData.message) errorMessage = errorData.message;
+        else if (errorData.error) errorMessage = errorData.error;
+      } catch {
+        errorMessage = `${errorMessage} (HTTP ${response.status})`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json() as { tags: unknown[] };
+    return z.array(TagSchema).parse(data.tags || []);
+  }
+
+  // Swipe file methods
+  async markAsSwipeFile(contentId: string): Promise<MarkSwipeFileResponse> {
+    if (this.config.readOnly) {
+      throw new Error("Cannot mark as swipe file in read-only mode");
+    }
+
+    const response = await this.request(`/api/mcp/content/${contentId}/swipe-file`, {
+      method: "POST",
+    });
+
+    if (!response.ok) {
+      let errorMessage = "Failed to mark as swipe file";
+      try {
+        const errorData = await response.json() as { message?: string; error?: string };
+        if (errorData.message) errorMessage = errorData.message;
+        else if (errorData.error) errorMessage = errorData.error;
+      } catch {
+        errorMessage = `${errorMessage} (HTTP ${response.status})`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    return MarkSwipeFileResponseSchema.parse(data);
+  }
+
+  async unmarkAsSwipeFile(contentId: string): Promise<UnmarkSwipeFileResponse> {
+    if (this.config.readOnly) {
+      throw new Error("Cannot unmark swipe file in read-only mode");
+    }
+
+    const response = await this.request(`/api/mcp/content/${contentId}/swipe-file`, {
+      method: "DELETE",
+    });
+
+    if (!response.ok) {
+      let errorMessage = "Failed to unmark swipe file";
+      try {
+        const errorData = await response.json() as { message?: string; error?: string };
+        if (errorData.message) errorMessage = errorData.message;
+        else if (errorData.error) errorMessage = errorData.error;
+      } catch {
+        errorMessage = `${errorMessage} (HTTP ${response.status})`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    return UnmarkSwipeFileResponseSchema.parse(data);
+  }
+
+  async getSwipeFileStatus(contentId: string): Promise<SwipeFileStatusResponse> {
+    const response = await this.request(`/api/mcp/content/${contentId}/swipe-file`);
+
+    if (!response.ok) {
+      let errorMessage = "Failed to get swipe file status";
+      try {
+        const errorData = await response.json() as { message?: string; error?: string };
+        if (errorData.message) errorMessage = errorData.message;
+        else if (errorData.error) errorMessage = errorData.error;
+      } catch {
+        errorMessage = `${errorMessage} (HTTP ${response.status})`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    return SwipeFileStatusResponseSchema.parse(data);
   }
 }
