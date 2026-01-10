@@ -6,37 +6,79 @@ export interface ClientConfig {
   readOnly: boolean;
 }
 
-// Schema definitions matching your Noverload database
-// Made more flexible to handle API variations
+// Content types enum for reuse
+export const ContentTypeEnum = z.enum(["youtube", "x_twitter", "reddit", "article", "pdf"]);
+export const ContentStatusEnum = z.enum(["pending", "processing", "completed", "failed"]);
+
+// Summary can be either a string or a structured object
+// The API returns different formats depending on processing stage
+export const SummaryObjectSchema = z.object({
+  one_sentence: z.string().optional(),
+  text: z.string().optional(),
+  key_points: z.array(z.string()).optional(),
+  actionable_takeaways: z.array(z.string()).optional(),
+}).passthrough(); // Allow additional fields from API
+
+export const SummarySchema = z.union([
+  z.string(),
+  SummaryObjectSchema,
+]).nullable().optional();
+
+// Processing metadata schema (flexible for API variations)
+export const ProcessingMetadataSchema = z.object({
+  processedAt: z.string().optional(),
+  duration: z.number().optional(),
+  model: z.string().optional(),
+  version: z.string().optional(),
+}).passthrough().nullable().optional();
+
+// Schema definitions matching Noverload database
+// Required fields will throw if missing - no silent defaults for critical data
 export const ContentSchema = z.object({
-  id: z.string(),
-  userId: z.string().optional().default(""), // Made optional with default
-  url: z.string(),
+  // Required fields - will throw if missing
+  id: z.string().min(1, "Content ID is required"),
+  url: z.string().min(1, "Content URL is required"),
+
+  // Optional metadata - may not be present in API response
+  userId: z.string().optional(),
   title: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
-  contentType: z.enum(["youtube", "x_twitter", "reddit", "article", "pdf"]).optional().default("article"),
-  status: z.enum(["pending", "processing", "completed", "failed"]).optional().default("completed"),
-  summary: z.any().nullable().optional(), // Can be string or object
-  keyInsights: z.array(z.string()).nullable().optional().default(null),
-  rawText: z.string().nullable().optional(), // Full content text
-  tokenCount: z.number().nullable().optional(), // Estimated token count for raw_text
+
+  // Fields with API-behavior defaults (API typically provides these)
+  contentType: ContentTypeEnum.optional().default("article"),
+  status: ContentStatusEnum.optional().default("pending"),
+
+  // Properly typed summary field
+  summary: SummarySchema,
+  keyInsights: z.array(z.string()).nullable().optional(),
+
+  // Content data
+  rawText: z.string().nullable().optional(),
+  tokenCount: z.number().nullable().optional(),
   ogImage: z.string().nullable().optional(),
-  processingMetadata: z.any().nullable().optional(),
-  tags: z.array(z.string()).optional().default([]), // Associated tags with default
-  createdAt: z.string().optional().default(() => new Date().toISOString()),
-  updatedAt: z.string().optional().default(() => new Date().toISOString()),
+  processingMetadata: ProcessingMetadataSchema,
+
+  // Tags default to empty array (API convention)
+  tags: z.array(z.string()).optional().default([]),
+
+  // Timestamps - optional, no fabrication if missing
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
 });
 
 export const ActionSchema = z.object({
-  id: z.string(),
-  contentId: z.string().optional().default(""),
-  goalId: z.string().nullable().optional().default(null),
-  title: z.string(),
-  description: z.string().nullable().optional().default(null),
-  priority: z.enum(["high", "medium", "low"]).nullable().optional().default("medium"),
+  // Required fields
+  id: z.string().min(1, "Action ID is required"),
+  title: z.string().min(1, "Action title is required"),
+
+  // Optional fields - no data fabrication
+  contentId: z.string().optional(),
+  goalId: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  priority: z.enum(["high", "medium", "low"]).nullable().optional(),
   completed: z.boolean().optional().default(false),
-  completedAt: z.string().nullable().optional().default(null),
-  createdAt: z.string().optional().default(() => new Date().toISOString()),
+  completedAt: z.string().nullable().optional(),
+  createdAt: z.string().optional(),
 });
 
 export const GoalSchema = z.object({
@@ -198,6 +240,51 @@ export class NoverloadClient {
     });
   }
 
+  /**
+   * Transform raw API content to schema format
+   * Handles both camelCase and snake_case field names from API
+   * Required fields (id, url) are passed through - Zod validates them
+   */
+  private transformRawContent(item: Record<string, unknown>): Record<string, unknown> {
+    // Get required fields - let Zod validate they exist
+    const id = item.id ?? item._id;
+    const url = item.url;
+
+    if (!id || !url) {
+      throw new Error(`Invalid content from API: missing ${!id ? 'id' : 'url'}`);
+    }
+
+    return {
+      // Required fields
+      id,
+      url,
+
+      // Optional metadata - use undefined if missing, not empty string
+      userId: item.userId ?? item.user_id ?? undefined,
+      title: item.title ?? null,
+      description: item.description ?? null,
+
+      // Fields with defaults handled by schema
+      contentType: item.contentType ?? item.content_type ?? undefined,
+      status: item.status ?? undefined,
+
+      // Content fields
+      summary: item.summary ?? null,
+      keyInsights: item.keyInsights ?? item.key_insights ?? null,
+      rawText: item.rawText ?? item.raw_text ?? null,
+      tokenCount: item.tokenCount ?? item.token_count ?? null,
+      ogImage: item.ogImage ?? item.og_image ?? null,
+      processingMetadata: item.processingMetadata ?? item.processing_metadata ?? null,
+
+      // Tags
+      tags: item.tags ?? undefined,
+
+      // Timestamps - pass through as-is, no fabrication
+      createdAt: item.createdAt ?? item.created_at ?? undefined,
+      updatedAt: item.updatedAt ?? item.updated_at ?? undefined,
+    };
+  }
+
   // Content methods
   async listContent(filters?: {
     status?: string;
@@ -210,7 +297,7 @@ export class NoverloadClient {
     if (filters?.limit) params.append("limit", filters.limit.toString());
 
     const response = await this.request(`/api/mcp/v2/content?${params}`);
-    
+
     if (!response.ok) {
       let errorMessage = "Failed to fetch content list";
       try {
@@ -228,37 +315,24 @@ export class NoverloadClient {
       }
       throw new Error(errorMessage);
     }
-    
-    const data = await response.json() as any;
+
+    const data = await response.json() as Record<string, unknown>;
     // v2 returns { success, contents, pagination }
-    const rawContents = data.contents || data;
-    
-    // Transform and validate each item with defaults for missing fields
-    const transformedContents = Array.isArray(rawContents) ? rawContents.map((item: any) => ({
-      id: item.id || item._id || "",
-      userId: item.userId || item.user_id || "",
-      url: item.url || "",
-      title: item.title || null,
-      description: item.description || null,
-      contentType: item.contentType || item.content_type || "article",
-      status: item.status || "completed",
-      summary: item.summary || null,
-      keyInsights: item.keyInsights || item.key_insights || null,
-      rawText: item.rawText || item.raw_text || null,
-      tokenCount: item.tokenCount || item.token_count || null,
-      ogImage: item.ogImage || item.og_image || null,
-      processingMetadata: item.processingMetadata || item.processing_metadata || null,
-      tags: item.tags || [],
-      createdAt: item.createdAt || item.created_at || new Date().toISOString(),
-      updatedAt: item.updatedAt || item.updated_at || new Date().toISOString(),
-    })) : [];
-    
+    const rawContents = (data.contents ?? data) as Record<string, unknown>[];
+
+    if (!Array.isArray(rawContents)) {
+      throw new Error("Invalid API response: expected array of contents");
+    }
+
+    // Transform and validate each item
+    const transformedContents = rawContents.map((item) => this.transformRawContent(item));
+
     return z.array(ContentSchema).parse(transformedContents);
   }
 
   async getContent(id: string): Promise<Content> {
     const response = await this.request(`/api/mcp/v2/content?id=${id}`);
-    
+
     if (!response.ok) {
       let errorMessage = `Failed to get content with ID: ${id}`;
       try {
@@ -272,36 +346,21 @@ export class NoverloadClient {
           errorMessage = `[${errorData.code}] ${errorMessage}`;
         }
       } catch {
-        // If JSON parsing fails, use status text
         errorMessage = `${errorMessage} (HTTP ${response.status})`;
       }
       throw new Error(errorMessage);
     }
-    
-    const data = await response.json() as any;
+
+    const data = await response.json() as Record<string, unknown>;
     // v2 returns { success, content }
-    const rawContent = data.content || data;
-    
-    // Transform with defaults for missing fields
-    const transformedContent = {
-      id: rawContent.id || rawContent._id || "",
-      userId: rawContent.userId || rawContent.user_id || "",
-      url: rawContent.url || "",
-      title: rawContent.title || null,
-      description: rawContent.description || null,
-      contentType: rawContent.contentType || rawContent.content_type || "article",
-      status: rawContent.status || "completed",
-      summary: rawContent.summary || null,
-      keyInsights: rawContent.keyInsights || rawContent.key_insights || null,
-      rawText: rawContent.rawText || rawContent.raw_text || null,
-      tokenCount: rawContent.tokenCount || rawContent.token_count || null,
-      ogImage: rawContent.ogImage || rawContent.og_image || null,
-      processingMetadata: rawContent.processingMetadata || rawContent.processing_metadata || null,
-      tags: rawContent.tags || [],
-      createdAt: rawContent.createdAt || rawContent.created_at || new Date().toISOString(),
-      updatedAt: rawContent.updatedAt || rawContent.updated_at || new Date().toISOString(),
-    };
-    
+    const rawContent = (data.content ?? data) as Record<string, unknown>;
+
+    if (!rawContent || typeof rawContent !== 'object') {
+      throw new Error(`Invalid API response for content ID: ${id}`);
+    }
+
+    // Transform and validate
+    const transformedContent = this.transformRawContent(rawContent);
     return ContentSchema.parse(transformedContent);
   }
 
@@ -338,6 +397,31 @@ export class NoverloadClient {
     return ContentSchema.parse(data);
   }
 
+  /**
+   * Transform raw API action to schema format
+   * Handles both camelCase and snake_case field names from API
+   */
+  private transformRawAction(item: Record<string, unknown>): Record<string, unknown> {
+    const id = item.id;
+    const title = item.title;
+
+    if (!id || !title) {
+      throw new Error(`Invalid action from API: missing ${!id ? 'id' : 'title'}`);
+    }
+
+    return {
+      id,
+      title,
+      contentId: item.contentId ?? item.content_id ?? undefined,
+      goalId: item.goalId ?? item.goal_id ?? null,
+      description: item.description ?? null,
+      priority: item.priority ?? undefined,
+      completed: item.completed ?? item.is_completed ?? false,
+      completedAt: item.completedAt ?? item.completed_at ?? null,
+      createdAt: item.createdAt ?? item.created_at ?? undefined,
+    };
+  }
+
   // Action methods
   async listActions(filters?: {
     contentId?: string;
@@ -354,23 +438,16 @@ export class NoverloadClient {
     const response = await this.request(`/api/mcp/v2/actions?${params}`);
     if (!response.ok) throw new Error("Failed to fetch actions");
 
-    const data = await response.json() as any;
+    const data = await response.json() as Record<string, unknown>;
     // v2 returns { success, actions, pagination, statistics }
-    const rawActions = data.actions || data;
+    const rawActions = (data.actions ?? data) as Record<string, unknown>[];
 
-    // Transform snake_case to camelCase and handle missing fields
-    const transformedActions = Array.isArray(rawActions) ? rawActions.map((item: any) => ({
-      id: item.id || "",
-      contentId: item.contentId || item.content_id || "",
-      goalId: item.goalId || item.goal_id || null,
-      title: item.title || "Untitled Action",
-      description: item.description || null,
-      priority: item.priority || "medium",
-      completed: item.completed ?? item.is_completed ?? false,
-      completedAt: item.completedAt || item.completed_at || null,
-      createdAt: item.createdAt || item.created_at || new Date().toISOString(),
-    })) : [];
+    if (!Array.isArray(rawActions)) {
+      throw new Error("Invalid API response: expected array of actions");
+    }
 
+    // Transform and validate each item
+    const transformedActions = rawActions.map((item) => this.transformRawAction(item));
     return z.array(ActionSchema).parse(transformedActions);
   }
 
@@ -478,25 +555,15 @@ export class NoverloadClient {
       // v2 returns { success, query, results, pagination, metadata }
       const results = data?.results || [];
       if (Array.isArray(results) && results.length > 0) {
-        return results.map((item: any) => ({
-          id: item.id || item._id || "",
-          userId: item.userId || item.user_id || "",
-          url: item.url || "",
-          title: item.title || "Untitled",
-          description: item.description || (typeof item.summary === 'string' ? item.summary.slice(0, 500) : ""),
-          contentType: item.contentType || item.content_type || "article",
-          status: item.status || item.metadata?.processingStatus || "completed",
-          summary: item.summary || null,
-          keyInsights: item.keyInsights || item.key_insights || [],
-          rawText: item.rawText || item.raw_text || item.fullContent || null,
-          tokenCount: item.tokenCount || item.token_count || null,
-          ogImage: item.ogImage || item.og_image || null,
-          processingMetadata: item.processingMetadata || item.processing_metadata || null,
-          tags: item.tags || [],
-          createdAt: item.createdAt || item.created_at || item.metadata?.createdAt || new Date().toISOString(),
-          updatedAt: item.updatedAt || item.updated_at || item.metadata?.updatedAt || new Date().toISOString(),
-          relevanceScore: item.relevanceScore || item.score || 0,
-        }));
+        return results.map((item: Record<string, unknown>) => {
+          // Transform content fields using helper, but preserve search-specific fields
+          const baseContent = this.transformRawContent(item);
+          return {
+            ...baseContent,
+            // Search-specific fields
+            relevanceScore: (item.relevanceScore ?? item.score ?? 0) as number,
+          };
+        });
       }
       
       // If no results, try a fallback search with looser parameters
@@ -535,27 +602,10 @@ export class NoverloadClient {
         return [];
       }
       
-      const data = await response.json() as any;
-      const results = Array.isArray(data) ? data : (data.results || []);
-      
-      return results.map((item: any) => ({
-        id: item.id || item._id || "",
-        userId: item.userId || item.user_id || "",
-        url: item.url || "",
-        title: item.title || "Untitled",
-        description: item.description || "",
-        contentType: item.contentType || item.content_type || "article",
-        status: item.status || "completed",
-        summary: item.summary || null,
-        keyInsights: item.keyInsights || item.key_insights || [],
-        rawText: item.rawText || item.raw_text || null,
-        tokenCount: item.tokenCount || item.token_count || null,
-        ogImage: item.ogImage || item.og_image || null,
-        processingMetadata: item.processingMetadata || item.processing_metadata || null,
-        tags: item.tags || [],
-        createdAt: item.createdAt || item.created_at || new Date().toISOString(),
-        updatedAt: item.updatedAt || item.updated_at || new Date().toISOString(),
-      }));
+      const data = await response.json() as Record<string, unknown>;
+      const results = Array.isArray(data) ? data : ((data.results ?? []) as Record<string, unknown>[]);
+
+      return results.map((item: Record<string, unknown>) => this.transformRawContent(item));
     } catch (error) {
       console.error("v1 search error:", error);
       return [];

@@ -1,5 +1,56 @@
 import { z } from "zod";
 import { Tool } from "../types.js";
+import { Content } from "../../client.js";
+
+// Interfaces for synthesis API response
+interface SynthesisInsight {
+  insight?: string;
+  text?: string;
+  category?: string;
+}
+
+interface SynthesisTheme {
+  theme: string;
+  frequency: number;
+  insight?: string;
+}
+
+interface SynthesisConnection {
+  pattern?: string;
+  concept?: string;
+  implication?: string;
+  strength?: string;
+}
+
+interface SynthesisData {
+  // Various summary field names from API
+  summary?: string;
+  executiveSummary?: string;
+  overview?: string;
+
+  // Various insight field names from API
+  insights?: (string | SynthesisInsight)[];
+  actionableInsights?: SynthesisInsight[];
+  keyInsights?: (string | SynthesisInsight)[];
+
+  // Theme and connection data
+  keyThemes?: SynthesisTheme[];
+  themes?: SynthesisTheme[];
+  connections?: (string | SynthesisConnection)[];
+  patterns?: (string | SynthesisConnection)[];
+  knowledgeGaps?: string[];
+  gaps?: string[];
+
+  // API metadata
+  success?: boolean;
+  sources?: unknown[];
+  sourcesAnalyzed?: number;
+}
+
+// Search result extends Content with relevance score
+interface SearchResult extends Content {
+  relevanceScore?: number;
+}
 
 export const exploreTopicTool: Tool = {
   name: "explore_topic",
@@ -16,11 +67,6 @@ export const exploreTopicTool: Tool = {
         enum: ["surface", "comprehensive", "expert"],
         description: "Depth of exploration",
         default: "comprehensive",
-      },
-      includeTimeline: {
-        type: "boolean",
-        description: "Include chronological evolution of the topic",
-        default: true,
       },
       includeConnections: {
         type: "boolean",
@@ -40,7 +86,6 @@ export const exploreTopicTool: Tool = {
     const schema = z.object({
       topic: z.string(),
       depth: z.enum(["surface", "comprehensive", "expert"]).optional().default("comprehensive"),
-      includeTimeline: z.boolean().optional().default(true),
       includeConnections: z.boolean().optional().default(true),
       maxSources: z.number().optional().default(20),
     });
@@ -51,8 +96,8 @@ export const exploreTopicTool: Tool = {
       limit: params.maxSources,
       enableConceptExpansion: true,
       fuzzyMatch: true,
-    });
-    
+    }) as SearchResult[];
+
     if (!searchResults || searchResults.length === 0) {
       return {
         content: [
@@ -64,36 +109,43 @@ export const exploreTopicTool: Tool = {
         data: null,
       };
     }
-    
+
     // Synthesize the content for deep understanding
     const synthesis = await client.synthesizeContent({
       query: `Comprehensive exploration of ${params.topic}`,
-      contentIds: searchResults.slice(0, params.maxSources).map((r: any) => r.id),
+      contentIds: searchResults.slice(0, params.maxSources).map((r) => r.id),
       synthesisMode: params.depth === "expert" ? "deep" : params.depth === "surface" ? "overview" : "actionable",
       findConnections: params.includeConnections,
       findContradictions: true,
     });
-    
+
     // Handle response format - synthesis might be nested or flat
-    const synthData = synthesis.synthesis || synthesis;
+    const synthData: SynthesisData = synthesis.synthesis || synthesis;
+
+    // Debug: log the structure to understand what API returns
+    console.error("[explore_topic] Synthesis response keys:", Object.keys(synthData));
 
     let responseText = `# 🔍 Topic Exploration: "${params.topic}"\n`;
     responseText += `**Depth:** ${params.depth} | **Sources Analyzed:** ${searchResults.length}\n\n`;
 
     // Overview Section - check multiple possible field names
-    const overviewText = synthData.summary || synthData.executiveSummary;
+    const overviewText = synthData.summary || synthData.executiveSummary || synthData.overview;
     responseText += `## 📋 Overview\n`;
-    if (overviewText) {
+    if (overviewText && !overviewText.includes("0 insights")) {
+      // Only use API summary if it's meaningful
       responseText += `${overviewText}\n\n`;
     } else {
-      responseText += `Analysis of ${searchResults.length} pieces of content about ${params.topic}.\n\n`;
+      // Generate a basic overview from search results
+      const contentTypes = [...new Set(searchResults.map(r => r.contentType))];
+      responseText += `Found ${searchResults.length} pieces of content about "${params.topic}" `;
+      responseText += `(${contentTypes.join(", ")}).\n\n`;
     }
 
     // Key Insights - check multiple possible field names
-    const insights = synthData.insights || synthData.actionableInsights || [];
+    const insights = synthData.insights || synthData.actionableInsights || synthData.keyInsights || [];
     if (insights.length > 0) {
       responseText += `## 💡 Key Insights\n`;
-      insights.slice(0, 10).forEach((insight: any, idx: number) => {
+      insights.slice(0, 10).forEach((insight, idx) => {
         if (typeof insight === 'string') {
           responseText += `${idx + 1}. ${insight}\n`;
         } else if (insight.insight) {
@@ -108,12 +160,29 @@ export const exploreTopicTool: Tool = {
         }
       });
       responseText += `\n`;
+    } else {
+      // Fallback: extract key points from content summaries
+      responseText += `## 💡 Content Summaries\n`;
+      searchResults.slice(0, 5).forEach((result, idx) => {
+        if (result.summary) {
+          const summaryText = typeof result.summary === 'string'
+            ? result.summary
+            : (result.summary as { one_sentence?: string; text?: string }).one_sentence
+              || (result.summary as { one_sentence?: string; text?: string }).text
+              || '';
+          if (summaryText) {
+            responseText += `${idx + 1}. **${result.title || 'Untitled'}**: ${summaryText.slice(0, 200)}${summaryText.length > 200 ? '...' : ''}\n`;
+          }
+        }
+      });
+      responseText += `\n`;
     }
 
     // Key Themes (from enhanced synthesis)
-    if (synthData.keyThemes && synthData.keyThemes.length > 0) {
+    const themes = synthData.keyThemes || synthData.themes || [];
+    if (themes.length > 0) {
       responseText += `## 🎨 Key Themes\n`;
-      synthData.keyThemes.slice(0, 5).forEach((theme: any, idx: number) => {
+      themes.slice(0, 5).forEach((theme, idx) => {
         responseText += `${idx + 1}. **${theme.theme}** (${theme.frequency} sources)\n`;
         if (theme.insight) {
           responseText += `   - ${theme.insight}\n`;
@@ -123,10 +192,10 @@ export const exploreTopicTool: Tool = {
     }
 
     // Connections (if found) - check multiple possible field names
-    const connections = synthData.connections || [];
+    const connections = synthData.connections || synthData.patterns || [];
     if (params.includeConnections && connections.length > 0) {
       responseText += `## 🔗 Related Topics & Connections\n`;
-      connections.slice(0, 8).forEach((conn: any) => {
+      connections.slice(0, 8).forEach((conn) => {
         if (typeof conn === 'string') {
           responseText += `- ${conn}\n`;
         } else if (conn.pattern) {
@@ -148,24 +217,25 @@ export const exploreTopicTool: Tool = {
     }
 
     // Knowledge Gaps
-    if (synthData.knowledgeGaps && synthData.knowledgeGaps.length > 0) {
+    const knowledgeGaps = synthData.knowledgeGaps || synthData.gaps || [];
+    if (knowledgeGaps.length > 0) {
       responseText += `## ❓ Areas to Explore Further\n`;
-      synthData.knowledgeGaps.slice(0, 5).forEach((gap: string) => {
+      knowledgeGaps.slice(0, 5).forEach((gap) => {
         responseText += `- ${gap}\n`;
       });
       responseText += `\n`;
     }
-    
+
     // Sources
     responseText += `## 📚 Top Sources\n`;
-    searchResults.slice(0, 5).forEach((source: any, idx: number) => {
-      const typeIcons: Record<string, string> = {
-        youtube: "📺",
-        x_twitter: "𝕏",
-        reddit: "🔗",
-        article: "📄",
-        pdf: "📑"
-      };
+    const typeIcons: Record<string, string> = {
+      youtube: "📺",
+      x_twitter: "𝕏",
+      reddit: "🔗",
+      article: "📄",
+      pdf: "📑"
+    };
+    searchResults.slice(0, 5).forEach((source, idx) => {
       const icon = typeIcons[source.contentType] || "📄";
       responseText += `${idx + 1}. ${icon} [${source.title || "Untitled"}](${source.url})\n`;
     });

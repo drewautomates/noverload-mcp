@@ -49,7 +49,7 @@ ${tools && tools.length > 0 ? tools.map((t) => t.name).join(", ") : "none"}
 | get_content_details | "Give me this article" - Full content retrieval |
 | batch_get_content | "Give me these 3 articles" - Multi-content retrieval |
 | explore_topic | "Synthesize insights on X" - Pre-processed, context-efficient |
-| extract_frameworks | "What methodologies exist for X?" - Extract processes/frameworks |
+| noverload_extract_frameworks | "What methodologies exist for X?" - Extract processes/frameworks |
 | save_content | "Save this URL" - Add new content |
 | list_actions | View extracted action items |
 | complete_action | Mark action as done |
@@ -67,7 +67,7 @@ ${tools && tools.length > 0 ? tools.map((t) => t.name).join(", ") : "none"}
 2. If needed, get_content_details on specific sources for quotes/details
 
 **Find frameworks or methodologies:**
-1. extract_frameworks → returns structured processes from content
+1. noverload_extract_frameworks → returns structured processes from content
 
 ## Token Management
 - list_saved_content: ~150 tokens per item (summaries only)

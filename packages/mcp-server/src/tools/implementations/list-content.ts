@@ -85,7 +85,9 @@ export const listSavedContentTool: Tool = {
           }
         }
         
-        responseText += `**Saved:** ${new Date(item.createdAt).toLocaleDateString()}\n`;
+        if (item.createdAt) {
+          responseText += `**Saved:** ${new Date(item.createdAt).toLocaleDateString()}\n`;
+        }
         responseText += '\n---\n\n';
       });
     } else {

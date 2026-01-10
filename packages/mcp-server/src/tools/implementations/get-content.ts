@@ -35,7 +35,9 @@ export const getContentDetailsTool: Tool = {
     responseText += `**Type:** ${content.contentType}\n`;
     responseText += `**Status:** ${content.status}\n`;
     responseText += `**URL:** ${content.url}\n`;
-    responseText += `**Saved:** ${new Date(content.createdAt).toLocaleDateString()}\n`;
+    if (content.createdAt) {
+      responseText += `**Saved:** ${new Date(content.createdAt).toLocaleDateString()}\n`;
+    }
     
     // Show content size information
     if (content.tokenCount) {

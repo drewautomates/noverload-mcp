@@ -2,6 +2,18 @@ import { z } from "zod";
 import { NoverloadClient } from "../../client.js";
 import { Tool } from "../types.js";
 
+// Interface for synthesis insight from API
+interface SynthesisInsight {
+  text?: string;
+  insight?: string;
+  source?: {
+    id?: string;
+    title?: string;
+    url?: string;
+    type?: string;
+  };
+}
+
 const inputSchema = z.object({
   query: z
     .string()
@@ -52,6 +64,53 @@ interface Framework {
     description: string;
     outcome?: string;
   }[];
+}
+
+/**
+ * Calculate confidence score for a framework based on various factors
+ */
+function calculateFrameworkConfidence(
+  name: string,
+  description: string,
+  steps: Array<{order: number; title: string; description: string}>,
+  hasSource: boolean
+): number {
+  let confidence = 0.5; // Base confidence
+
+  // Named framework pattern (e.g., "MOAT Framework", "3-Step Method")
+  const namedFrameworkPattern = /\b([A-Z][A-Za-z0-9\-]+\s+)?(Framework|Method|Process|System|Approach|Model|Strategy|Technique)\b/i;
+  if (namedFrameworkPattern.test(name)) {
+    confidence += 0.15;
+  }
+
+  // Has numbered/lettered prefix (e.g., "3-Step", "4-Part", "ABC")
+  if (/\b\d+[-\s]?(step|part|phase|stage|point|pillar)/i.test(name) || /\b[A-Z]{2,5}\b/.test(name)) {
+    confidence += 0.1;
+  }
+
+  // Has clear steps extracted
+  if (steps.length >= 2) {
+    confidence += 0.1;
+    if (steps.length >= 4) {
+      confidence += 0.05; // More steps = more structured
+    }
+  }
+
+  // Description quality
+  if (description.length > 100) {
+    confidence += 0.05;
+  }
+  if (description.length > 200) {
+    confidence += 0.05;
+  }
+
+  // Has source attribution
+  if (hasSource) {
+    confidence += 0.05;
+  }
+
+  // Cap at 0.95
+  return Math.min(0.95, Math.round(confidence * 100) / 100);
 }
 
 export const extractFrameworksTool: Tool = {
@@ -127,12 +186,16 @@ export const extractFrameworksTool: Tool = {
 
       // Extract frameworks from synthesis insights
       const allFrameworks: Framework[] = [];
-      const frameworkPattern = /(?:framework|methodology|process|approach|system|technique|method|strategy):\s*(.+)/i;
 
-      for (const insight of insights) {
+      for (const rawInsight of insights) {
+        // Normalize insight to our interface
+        const insight: SynthesisInsight = typeof rawInsight === 'string'
+          ? { text: rawInsight }
+          : rawInsight as SynthesisInsight;
+
         // Check if this insight describes a framework
-        const text = typeof insight === 'string' ? insight : (insight as any).text || (insight as any).insight;
-        const source = typeof insight === 'object' ? (insight as any).source : null;
+        const text = insight.text || insight.insight;
+        const source = insight.source || null;
         
         // Look for framework indicators
         if (text && (
@@ -163,37 +226,57 @@ export const extractFrameworksTool: Tool = {
           else if (text.toLowerCase().includes('pattern')) type = "pattern";
           else if (text.toLowerCase().includes('technique')) type = "technique";
 
+          // Extract steps first - more strict regex to avoid false positives
+          // Matches patterns like: "Step 1:", "1.", "1)", "1 -" at start of text or after newline/period
+          const stepRegex = /(?:^|[.\n]\s*)(?:step\s+)?(\d{1,2})(?:\.|:|\.|\)|\s+-)\s+([A-Z][^.\n]{10,80})/gim;
+          const steps: Array<{order: number; title: string; description: string}> = [];
+          const seenOrders = new Set<number>();
+          let stepMatch;
+
+          while ((stepMatch = stepRegex.exec(text)) !== null) {
+            const order = parseInt(stepMatch[1]);
+            const stepDescription = (stepMatch[2] || '').trim();
+
+            // Skip if we've seen this order (duplicate), order is too high (likely not a step),
+            // or description is too short (likely a false positive like "4 key elements")
+            if (seenOrders.has(order) || order > 20 || stepDescription.length < 10) {
+              continue;
+            }
+
+            // Skip if it looks like a number in content (e.g., "8 seconds", "4 key elements")
+            if (/^\d+\s+(seconds?|minutes?|hours?|days?|weeks?|months?|years?|key|main|core|primary|steps?|elements?|things?|items?|points?)/i.test(stepMatch[0])) {
+              continue;
+            }
+
+            seenOrders.add(order);
+            steps.push({
+              order: order,
+              title: `Step ${order}`,
+              description: stepDescription,
+            });
+          }
+
+          // Sort steps by order
+          steps.sort((a, b) => a.order - b.order);
+
+          // Calculate dynamic confidence based on framework quality
+          const hasSource = !!source;
+          const confidence = calculateFrameworkConfidence(frameworkName, text, steps, hasSource);
+
           const framework: Framework = {
             name: frameworkName,
             type: type,
             description: text,
             useCases: [],
-            confidence: 0.8, // Default confidence since synthesis doesn't provide it
+            confidence: confidence,
             sourceContent: source ? {
               id: source.id || "unknown",
               title: source.title || "Unknown Source",
               url: source.url || "",
               type: source.type || "article",
             } : undefined,
+            steps: steps.length > 0 ? steps : undefined,
           };
-
-          // Extract steps if mentioned
-          const stepRegex = /(?:step\s+)?(\d+)[.:\s]+([^.]+)/gi;
-          const steps: Array<{order: number; title: string; description: string}> = [];
-          let stepMatch;
-          let stepIdx = 0;
-          while ((stepMatch = stepRegex.exec(text)) !== null) {
-            steps.push({
-              order: parseInt(stepMatch[1] || '1') || stepIdx + 1,
-              title: `Step ${stepMatch[1] || stepIdx + 1}`,
-              description: (stepMatch[2] || '').trim(),
-            });
-            stepIdx++;
-          }
-          
-          if (steps.length > 0) {
-            framework.steps = steps;
-          }
 
           allFrameworks.push(framework);
         }
@@ -215,17 +298,23 @@ export const extractFrameworksTool: Tool = {
         };
       }
 
-      // Sort frameworks by confidence and limit
-      allFrameworks.sort((a, b) => b.confidence - a.confidence);
-      const limitedFrameworks = allFrameworks.slice(0, input.limit);
+      // Filter by minConfidence, sort by confidence, and limit
+      const filteredFrameworks = allFrameworks.filter(fw => fw.confidence >= input.minConfidence);
+      filteredFrameworks.sort((a, b) => b.confidence - a.confidence);
+      const limitedFrameworks = filteredFrameworks.slice(0, input.limit);
 
       // Format response
-      let responseText = `🎯 **Found ${allFrameworks.length} frameworks**\n\n`;
+      const showingCount = limitedFrameworks.length;
+      const aboveThreshold = filteredFrameworks.length;
+      let responseText = `🎯 **Found ${aboveThreshold} frameworks** (above ${(input.minConfidence * 100).toFixed(0)}% confidence)\n\n`;
 
       if (input.query) {
         responseText += `Search: "${input.query}"\n`;
       }
-      responseText += `Minimum confidence: ${input.minConfidence}\n\n`;
+      if (aboveThreshold < allFrameworks.length) {
+        responseText += `*${allFrameworks.length - aboveThreshold} additional frameworks below confidence threshold*\n`;
+      }
+      responseText += `\n`;
 
       // Group frameworks by type
       const byType = limitedFrameworks.reduce(
@@ -296,12 +385,15 @@ export const extractFrameworksTool: Tool = {
 
       // Add summary statistics
       responseText += `\n---\n📊 **Summary:**\n`;
-      responseText += `- Total frameworks found: ${allFrameworks.length}\n`;
-      responseText += `- High confidence (>90%): ${allFrameworks.filter((f) => f.confidence > 0.9).length}\n`;
+      responseText += `- Showing: ${showingCount} of ${aboveThreshold} frameworks (≥${(input.minConfidence * 100).toFixed(0)}% confidence)\n`;
+      responseText += `- High confidence (>90%): ${filteredFrameworks.filter((f) => f.confidence > 0.9).length}\n`;
       responseText += `- Sources analyzed: ${synthesisResult.sources?.length || 0}\n`;
 
-      if (allFrameworks.length > input.limit) {
+      if (aboveThreshold > input.limit) {
         responseText += `\n*Showing top ${input.limit} frameworks. Increase limit to see more.*`;
+      }
+      if (input.minConfidence > 0.5 && allFrameworks.length > aboveThreshold) {
+        responseText += `\n*Lower minConfidence to see ${allFrameworks.length - aboveThreshold} more frameworks.*`;
       }
 
       return {
