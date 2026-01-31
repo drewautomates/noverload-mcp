@@ -9,13 +9,10 @@ import { saveContentTool } from "./implementations/save-content.js";
 import { batchGetContentTool } from "./implementations/batch-get.js";
 import { exploreTopicTool } from "./implementations/explore-topic.js";
 import { extractFrameworksTool } from "./implementations/extract-frameworks.js";
-import { listActionsTool, completeActionTool } from "./implementations/actions.js";
 import { listGoalsTool } from "./implementations/goals.js";
 
-// TAG TOOLS - For swipe file and content organization workflows
+// TAG TOOLS - Discovery only, management done in platform
 import { listTagsTool } from "./implementations/list-tags.js";
-import { addTagsTool, removeTagsTool, createTagTool } from "./implementations/manage-tags.js";
-import { markAsSwipeFileTool, unmarkSwipeFileTool } from "./implementations/swipe-file.js";
 
 // ARCHIVED TOOLS (in _archived/ folder for potential future use):
 // - synthesize.ts: explore_topic does this better
@@ -30,6 +27,9 @@ import { markAsSwipeFileTool, unmarkSwipeFileTool } from "./implementations/swip
 // - instructions.ts: Guidance now in MCP system prompt
 // - similar-content.ts: search_content covers most cases
 // - timeline.ts: Niche use case
+// - manage-tags.ts: Tag management done in platform (create_tag, add_tags, remove_tags)
+// - swipe-file.ts: Swipe file management done in platform (mark_as_swipe_file, unmark_swipe_file)
+// - actions.ts: Actions feature removed from app (list_actions, complete_action)
 
 // Export all tools as a single array
 export const tools: Tool[] = [
@@ -54,20 +54,11 @@ export const tools: Tool[] = [
   // 7. Save: "Save this URL" (now with optional tags)
   saveContentTool,
 
-  // 8-10. Actions and goals
-  listActionsTool,
-  completeActionTool,
+  // 8. Goals
   listGoalsTool,
 
-  // 11-14. Tag management (for swipe file workflows)
+  // 9. Tag discovery (management done in platform)
   listTagsTool,
-  createTagTool,
-  addTagsTool,
-  removeTagsTool,
-
-  // 15-16. Swipe file management (mark content for craft analysis)
-  markAsSwipeFileTool,
-  unmarkSwipeFileTool,
 ];
 
 // Export individual tools for testing
@@ -79,13 +70,6 @@ export {
   batchGetContentTool,
   exploreTopicTool,
   extractFrameworksTool,
-  listActionsTool,
-  completeActionTool,
   listGoalsTool,
   listTagsTool,
-  createTagTool,
-  addTagsTool,
-  removeTagsTool,
-  markAsSwipeFileTool,
-  unmarkSwipeFileTool,
 };

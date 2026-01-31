@@ -114,7 +114,7 @@ function calculateFrameworkConfidence(
 }
 
 export const extractFrameworksTool: Tool = {
-  name: "noverload_extract_frameworks",
+  name: "extract_frameworks",
   description:
     "Extract methodologies, frameworks, and step-by-step processes from your saved content. Finds structured approaches, patterns, and repeatable techniques.",
   inputSchema: {

@@ -40,43 +40,66 @@ Use these tools to GET content, then apply your reasoning to analyze, connect, a
 ## Available Tools (${tools?.length || 0})
 ${tools && tools.length > 0 ? tools.map((t) => t.name).join(", ") : "none"}
 
-## When to Use Each Tool
+## Retrieval Decision Tree
 
-| Tool | Use When |
-|------|----------|
-| list_saved_content | "What do I have?" - Discovery and browsing |
-| search_content | "Find content about X" - RAG-powered semantic search |
-| get_content_details | "Give me this article" - Full content retrieval |
-| batch_get_content | "Give me these 3 articles" - Multi-content retrieval |
-| explore_topic | "Synthesize insights on X" - Pre-processed, context-efficient |
-| noverload_extract_frameworks | "What methodologies exist for X?" - Extract processes/frameworks |
-| save_content | "Save this URL" - Add new content |
-| list_actions | View extracted action items |
-| complete_action | Mark action as done |
-| list_goals | View user's goals |
+**Start here:** What does the user need?
+
+1. **"Summarize/synthesize across my content"** → \`explore_topic\`
+   - Returns pre-extracted insights, frameworks, and patterns across sources
+   - Context-efficient (~1-2k tokens vs 20k+ for raw content)
+   - Best for: research, finding themes, cross-content analysis
+
+2. **"Find specific content about X"** → \`search_content\`
+   - Semantic search with RAG (understands concepts, not just keywords)
+   - Returns summaries + metadata (~200 tokens per result)
+   - Use \`tags\` filter to narrow results
+   - Best for: finding relevant sources before deep-diving
+
+3. **"Give me the full details"** → \`get_content_details\`
+   - Returns complete transcript/article text + all metadata
+   - Use ONLY when you need exact quotes or full context
+   - Check token count before retrieving (shown in response)
+
+4. **"What frameworks/processes exist?"** → \`noverload_extract_frameworks\`
+   - Returns structured methodologies with steps, use cases, confidence
+   - Best for: learning HOW to do something from saved content
 
 ## Recommended Workflows
 
 **Quick question about saved content:**
-1. search_content → find relevant items
-2. get_content_details → get full text for top result
-3. Apply your reasoning to answer
+\`\`\`
+search_content(query) → find relevant items → answer from summaries
+\`\`\`
 
-**Deep research on a topic:**
-1. explore_topic → get pre-synthesized insights (context-efficient!)
-2. If needed, get_content_details on specific sources for quotes/details
+**Deep research / synthesis:**
+\`\`\`
+explore_topic(topic, depth: "comprehensive") → get synthesized insights
+  ↓ (if needed)
+get_content_details(id) → get specific quotes/full context
+\`\`\`
 
-**Find frameworks or methodologies:**
-1. noverload_extract_frameworks → returns structured processes from content
+**Learning a methodology:**
+\`\`\`
+noverload_extract_frameworks(query) → get structured processes with steps
+\`\`\`
+
+**Creating a report across multiple sources:**
+\`\`\`
+explore_topic(topic) → get themes + connections
+  ↓
+batch_get_content(ids) → get full text for key sources only
+\`\`\`
 
 ## Token Management
-- list_saved_content: ~150 tokens per item (summaries only)
-- search_content: ~200 tokens per result (or 10k+ with includeFullContent)
-- get_content_details: Shows token count - warn user if >50k
-- explore_topic: Context-efficient - returns synthesized insights, not raw text
+| Tool | Typical Size | When to Use |
+|------|--------------|-------------|
+| explore_topic | ~1-2k tokens | First choice for multi-source questions |
+| search_content | ~200/result | Finding relevant content |
+| get_content_details | 1k-50k+ tokens | Only when full text needed |
+| noverload_extract_frameworks | ~500-2k tokens | Learning processes/methods |
 
 ## Key Principle
-Start with search or explore_topic. Only fetch full content when you need exact quotes or deep analysis.`;
+**Start broad, go narrow.** Use explore_topic or search_content first. Only fetch full content when you need exact quotes or deep analysis.`;
 
   const server = new McpServer(
     {

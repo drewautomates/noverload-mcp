@@ -111,10 +111,12 @@ export const exploreTopicTool: Tool = {
     }
 
     // Synthesize the content for deep understanding
+    // Note: "actionable" mode is the only one that properly uses ai_insights.frameworks
+    // "overview" and "thematic" modes use processing_metadata.concepts which may be empty
     const synthesis = await client.synthesizeContent({
       query: `Comprehensive exploration of ${params.topic}`,
       contentIds: searchResults.slice(0, params.maxSources).map((r) => r.id),
-      synthesisMode: params.depth === "expert" ? "deep" : params.depth === "surface" ? "overview" : "actionable",
+      synthesisMode: params.depth === "surface" ? "overview" : "actionable",
       findConnections: params.includeConnections,
       findContradictions: true,
     });
