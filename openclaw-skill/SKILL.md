@@ -7,7 +7,7 @@ mcp-server:
   command: npx
   args: ["-y", "noverload-mcp@latest"]
   env:
-    NOVERLOAD_CONFIG: '{"accessToken":"${NOVERLOAD_TOKEN}","apiUrl":"https://www.noverload.com","readOnly":true}'
+    NOVERLOAD_CONFIG: '{"accessToken":"${NOVERLOAD_TOKEN}","apiUrl":"https://noverload.com","readOnly":true}'
 ---
 
 # Noverload - Knowledge Memory for AI Agents

@@ -72,7 +72,7 @@ Tools in `packages/mcp-server/src/tools/index.ts` follow these patterns:
 ```typescript
 {
   accessToken: string,      // Required: Personal access token
-  apiUrl: string,          // Default: "https://www.noverload.com"
+  apiUrl: string,          // Default: "https://noverload.com"
   readOnly: boolean        // Default: true (safety first)
 }
 ```

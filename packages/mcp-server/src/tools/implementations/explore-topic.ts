@@ -52,9 +52,47 @@ interface SearchResult extends Content {
   relevanceScore?: number;
 }
 
+// Stop words to ignore when extracting topic keywords
+const STOP_WORDS = new Set([
+  "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+  "have", "has", "had", "do", "does", "did", "will", "would", "could",
+  "should", "may", "might", "shall", "can", "need", "dare", "ought",
+  "used", "to", "of", "in", "for", "on", "with", "at", "by", "from",
+  "as", "into", "through", "during", "before", "after", "above", "below",
+  "between", "out", "off", "over", "under", "again", "further", "then",
+  "once", "and", "but", "or", "nor", "not", "so", "yet", "both",
+  "each", "few", "more", "most", "other", "some", "such", "no",
+  "only", "own", "same", "than", "too", "very", "just", "about",
+  "how", "what", "which", "who", "whom", "this", "that", "these",
+  "those", "am", "it", "its", "my", "your", "our", "their", "all",
+  "any", "if", "up", "down", "here", "there", "when", "where", "why",
+  "impact", "effect", "effects", "role", "using", "use",
+]);
+
+/**
+ * Extract meaningful keywords from a topic string.
+ * Returns lowercase terms with stop words removed.
+ */
+function extractTopicKeywords(topic: string): string[] {
+  return topic
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .split(/\s+/)
+    .filter((word) => word.length > 2 && !STOP_WORDS.has(word));
+}
+
+/**
+ * Check if a piece of text is relevant to the given topic keywords.
+ * Returns true if the text contains at least one topic keyword.
+ */
+function isRelevantToTopic(text: string, keywords: string[]): boolean {
+  const lowerText = text.toLowerCase();
+  return keywords.some((keyword) => lowerText.includes(keyword));
+}
+
 export const exploreTopicTool: Tool = {
   name: "explore_topic",
-  description: "Deep exploration of a topic across all saved content. Provides comprehensive understanding with multiple perspectives, evolution over time, and key concepts.",
+  description: "Synthesize insights about a topic across multiple saved sources (~1-2k tokens). Returns cross-source themes, key insights, connections, and knowledge gaps. More token-efficient than fetching individual items. Use for research questions, finding patterns, or understanding a topic from multiple perspectives.",
   inputSchema: {
     type: "object",
     properties: {
@@ -99,11 +137,19 @@ export const exploreTopicTool: Tool = {
     }) as SearchResult[];
 
     if (!searchResults || searchResults.length === 0) {
+      const terms = params.topic.split(/\s+/).filter((t) => t.length > 2);
+      let suggestions = `No content found for topic: "${params.topic}".\n\n`;
+      suggestions += `**Suggestions:**\n`;
+      suggestions += `- Try broader terms (e.g., "${terms[0] || params.topic}")\n`;
+      suggestions += `- Use \`search_content\` with \`searchMode: "any"\` for looser matching\n`;
+      suggestions += `- Use \`list_saved_content\` to browse what's available\n`;
+      suggestions += `- Save relevant content first, then re-explore\n`;
+
       return {
         content: [
           {
             type: "text",
-            text: `No content found for topic: "${params.topic}". Try saving relevant content first or use a different search term.`,
+            text: suggestions,
           },
         ],
         data: null,
@@ -126,6 +172,34 @@ export const exploreTopicTool: Tool = {
 
     // Debug: log the structure to understand what API returns
     console.error("[explore_topic] Synthesis response keys:", Object.keys(synthData));
+
+    // Filter insights and frameworks for topic relevance
+    // The synthesis API extracts ALL frameworks from matched sources, even off-topic ones
+    const topicKeywords = extractTopicKeywords(params.topic);
+
+    if (topicKeywords.length > 0) {
+      const filterInsightArray = (arr: (string | SynthesisInsight)[]): (string | SynthesisInsight)[] => {
+        return arr.filter((item) => {
+          const text = typeof item === "string"
+            ? item
+            : (item.insight || item.text || "");
+          return isRelevantToTopic(text, topicKeywords);
+        });
+      };
+
+      if (synthData.insights) {
+        synthData.insights = filterInsightArray(synthData.insights);
+      }
+      if (synthData.actionableInsights) {
+        synthData.actionableInsights = synthData.actionableInsights.filter((item) => {
+          const text = item.insight || item.text || "";
+          return isRelevantToTopic(text, topicKeywords);
+        });
+      }
+      if (synthData.keyInsights) {
+        synthData.keyInsights = filterInsightArray(synthData.keyInsights);
+      }
+    }
 
     let responseText = `# 🔍 Topic Exploration: "${params.topic}"\n`;
     responseText += `**Depth:** ${params.depth} | **Sources Analyzed:** ${searchResults.length}\n\n`;

@@ -8,7 +8,7 @@ Connect your Noverload saved content to AI assistants like Claude, Cursor, and W
 
 ## Quick Start
 
-1. **Get your token**: [Generate a Personal Access Token](https://www.noverload.com/dashboard/settings) from your Noverload dashboard
+1. **Get your token**: [Generate a Personal Access Token](https://noverload.com/dashboard/settings) from your Noverload dashboard
 2. **Copy the config**: Use the zero-install configuration below with your token
 3. **Add to your AI tool**: Paste into Claude Desktop, Cursor, or Windsurf settings
 4. **Start using**: Ask your AI about your saved content!
@@ -20,7 +20,7 @@ Connect your Noverload saved content to AI assistants like Claude, Cursor, and W
       "command": "npx",
       "args": ["-y", "noverload-mcp@latest"],
       "env": {
-        "NOVERLOAD_CONFIG": "{\"accessToken\":\"your-token-here\",\"apiUrl\":\"https://www.noverload.com\",\"readOnly\":true}"
+        "NOVERLOAD_CONFIG": "{\"accessToken\":\"your-token-here\",\"apiUrl\":\"https://noverload.com\",\"readOnly\":true}"
       }
     }
   }
@@ -77,7 +77,7 @@ npm run build
 
 ### Step 1: Get Your Personal Access Token
 
-1. Log in to [Noverload](https://www.noverload.com)
+1. Log in to [Noverload](https://noverload.com)
 2. Go to Settings → API Access
 3. Click "Generate Personal Access Token"
 4. Copy the token (you won't be able to see it again)
@@ -99,7 +99,7 @@ Edit your Claude configuration file:
       "command": "npx",
       "args": ["-y", "noverload-mcp@latest"],
       "env": {
-        "NOVERLOAD_CONFIG": "{\"accessToken\":\"YOUR_ACCESS_TOKEN_HERE\",\"apiUrl\":\"https://www.noverload.com\",\"readOnly\":true}"
+        "NOVERLOAD_CONFIG": "{\"accessToken\":\"YOUR_ACCESS_TOKEN_HERE\",\"apiUrl\":\"https://noverload.com\",\"readOnly\":true}"
       }
     }
   }
@@ -118,7 +118,7 @@ Edit your Claude configuration file:
     "command": "noverload-mcp",
     "args": [],
     "env": {
-      "NOVERLOAD_CONFIG": "{\"accessToken\":\"YOUR_ACCESS_TOKEN_HERE\",\"apiUrl\":\"https://www.noverload.com\",\"readOnly\":true}"
+      "NOVERLOAD_CONFIG": "{\"accessToken\":\"YOUR_ACCESS_TOKEN_HERE\",\"apiUrl\":\"https://noverload.com\",\"readOnly\":true}"
     }
   }
 }
@@ -135,7 +135,7 @@ Add to your Windsurf MCP configuration:
       "command": "npx",
       "args": ["-y", "noverload-mcp@latest"],
       "env": {
-        "NOVERLOAD_CONFIG": "{\"accessToken\":\"YOUR_ACCESS_TOKEN_HERE\",\"apiUrl\":\"https://www.noverload.com\",\"readOnly\":true}"
+        "NOVERLOAD_CONFIG": "{\"accessToken\":\"YOUR_ACCESS_TOKEN_HERE\",\"apiUrl\":\"https://noverload.com\",\"readOnly\":true}"
       }
     }
   }

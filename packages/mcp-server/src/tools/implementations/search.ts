@@ -4,7 +4,7 @@ import { generateTokenWarning, TOKEN_THRESHOLDS, CONTEXT_MANAGEMENT_INSTRUCTIONS
 
 export const searchContentTool: Tool = {
   name: "search_content",
-  description: "Advanced search using vector embeddings, full-text, or hybrid search. Leverages semantic similarity for concept-based matching beyond keywords.",
+  description: "Search saved content by topic, keyword, or concept. Start here for most queries. Returns summaries and metadata (~200 tokens/result). Set includeFullContent: true to also get full text (10k-100k+ tokens total). Supports semantic, hybrid, and full-text search modes.",
   inputSchema: {
     type: "object",
     properties: {
@@ -124,13 +124,51 @@ export const searchContentTool: Tool = {
       searchOptions.enableConceptExpansion = true;
     }
     
-    const results = await client.searchContent(enhancedQuery, searchOptions);
-    
+    let results = await client.searchContent(enhancedQuery, searchOptions);
+
+    // When includeFullContent is true, enrich results via batchGetContent
+    // because the v2 search API doesn't reliably return rawText or tokenCount
+    if (params.includeFullContent && results.length > 0) {
+      try {
+        const ids = results.map((r: Record<string, unknown>) => r.id as string).filter(Boolean);
+        if (ids.length > 0) {
+          const batchResult = await client.batchGetContent(ids, true);
+          const enrichedContents = batchResult.contents || batchResult.results || [];
+
+          if (Array.isArray(enrichedContents) && enrichedContents.length > 0) {
+            // Build lookup map from batch results
+            const enrichedMap = new Map<string, Record<string, unknown>>();
+            for (const item of enrichedContents) {
+              if (item.id) {
+                enrichedMap.set(item.id as string, item as Record<string, unknown>);
+              }
+            }
+
+            // Merge enriched data back into search results
+            results = results.map((r: Record<string, unknown>) => {
+              const enriched = enrichedMap.get(r.id as string);
+              if (enriched) {
+                return {
+                  ...r,
+                  rawText: enriched.rawText ?? enriched.raw_text ?? r.rawText,
+                  tokenCount: enriched.tokenCount ?? enriched.token_count ?? r.tokenCount,
+                };
+              }
+              return r;
+            });
+          }
+        }
+      } catch (enrichError) {
+        console.error("[search] Failed to enrich results via batchGetContent:", enrichError);
+        // Continue with un-enriched results
+      }
+    }
+
     // Calculate total token count if including full content
     let totalTokens = 0;
     if (params.includeFullContent && results.length > 0) {
-      totalTokens = results.reduce((sum: number, item: any) => {
-        return sum + (item.tokenCount || 0);
+      totalTokens = results.reduce((sum: number, item: Record<string, unknown>) => {
+        return sum + ((item.tokenCount as number) || 0);
       }, 0);
       
       // Check if we need to warn about large content
@@ -297,7 +335,14 @@ export const searchContentTool: Tool = {
             });
           }
         }
-        
+
+        // Include full text when requested
+        if (params.includeFullContent && result.rawText) {
+          responseText += `\n### Full Text\n\n`;
+          responseText += result.rawText;
+          responseText += `\n`;
+        }
+
         responseText += '\n---\n\n';
       });
       

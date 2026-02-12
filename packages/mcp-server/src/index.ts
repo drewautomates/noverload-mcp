@@ -15,7 +15,7 @@ import { tools } from "./tools/index.js";
 
 const ConfigSchema = z.object({
   accessToken: z.string().min(1, "Access token is required"),
-  apiUrl: z.string().url().optional().default("https://www.noverload.com"),
+  apiUrl: z.string().url().optional().default("https://noverload.com"),
   readOnly: z.boolean().optional().default(true),
 });
 

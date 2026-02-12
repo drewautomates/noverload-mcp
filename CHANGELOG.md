@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.9.7] - 2025-02-12
+
+### Token-Efficient Retrieval & Smarter Tool Guidance
+
+#### Changed
+
+- **Tool Descriptions**: Rewritten all tool descriptions with token-aware guidance, expected output sizes, and usage recommendations to help AI assistants pick the right tool
+- **`get_content_details`**: Now returns summary + metadata by default (~200-500 tokens). New `includeFullContent` parameter to opt-in to full text retrieval
+- **`search_content`**: When `includeFullContent` is true, enriches results via `batchGetContent` for reliable full text. Renders full text in output
+- **`explore_topic`**: Filters synthesized insights and frameworks for topic relevance (prevents off-topic results from matched sources). Better empty state with actionable suggestions
+- **API URL**: Changed default from `www.noverload.com` to `noverload.com`
+
+#### Fixed
+
+- Replaced `any` types with proper `Record<string, unknown>` in search implementation
+- Documentation URLs updated across README, INSTALL, and CHANGELOG
+
 ## [0.6.0-beta.1] - 2025-08-31
 
 ### 🎯 Beta Release: Stability and Reliability Improvements
@@ -72,4 +89,4 @@ This beta release focuses on improving stability, reliability, and error handlin
 
 ---
 
-For more details on the v2 API, see the [API Reference](https://www.noverload.com/docs/integrations/api)
+For more details on the v2 API, see the [API Reference](https://noverload.com/docs/integrations/api)

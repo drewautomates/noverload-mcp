@@ -4,7 +4,7 @@ import { generateTokenWarning, generatePreviewResponse, TOKEN_THRESHOLDS } from 
 
 export const getContentDetailsTool: Tool = {
   name: "get_content_details",
-  description: "Get complete details about a specific saved content item including full transcript/article text, AI-generated summary, key insights, and all metadata",
+  description: "Get details about a specific saved content item by ID. Returns summary, key insights, tags, and metadata by default (~200-500 tokens). Set includeFullContent: true to also get the full transcript/article text (can be 1k-100k+ tokens). Use search_content first to find IDs.",
   inputSchema: {
     type: "object",
     properties: {
@@ -12,9 +12,14 @@ export const getContentDetailsTool: Tool = {
         type: "string",
         description: "The ID of the content to retrieve",
       },
+      includeFullContent: {
+        type: "boolean",
+        description: "Include full transcript/article text. Default false (summary only). Set true when you need exact quotes or complete text.",
+        default: false,
+      },
       acceptLargeContent: {
         type: "boolean",
-        description: "Accept large content (>50k tokens) without warning",
+        description: "Accept large content (>50k tokens) without warning. Only applies when includeFullContent is true.",
         default: false,
       },
     },
@@ -24,9 +29,10 @@ export const getContentDetailsTool: Tool = {
   handler: async (client, args) => {
     const schema = z.object({
       contentId: z.string(),
+      includeFullContent: z.boolean().optional().default(false),
       acceptLargeContent: z.boolean().optional().default(false),
     });
-    const { contentId, acceptLargeContent } = schema.parse(args);
+    const { contentId, includeFullContent, acceptLargeContent } = schema.parse(args);
     const content = await client.getContent(contentId);
     
     // Build comprehensive response with all details
@@ -105,7 +111,30 @@ export const getContentDetailsTool: Tool = {
       responseText += '\n';
     }
     
-    // Check if content is large and needs warning
+    // If full content not requested, return summary + metadata only
+    if (!includeFullContent) {
+      // Add hint about available full content
+      if (content.tokenCount) {
+        responseText += `\n---\n`;
+        responseText += `*Full content available (~${content.tokenCount.toLocaleString()} tokens). `;
+        responseText += `Re-run with \`includeFullContent: true\` to retrieve.*\n`;
+      }
+
+      // Strip rawText from data payload to save tokens
+      const { rawText: _rawText, ...contentWithoutRawText } = content;
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: responseText,
+          },
+        ],
+        data: contentWithoutRawText,
+      };
+    }
+
+    // Full content requested - check if it's large and needs warning
     if (content.tokenCount && content.tokenCount > TOKEN_THRESHOLDS.HUGE && !acceptLargeContent) {
       // Return preview with warning instead of full content
       return {
@@ -128,13 +157,13 @@ export const getContentDetailsTool: Tool = {
         },
       };
     }
-    
+
     // Include full text content
     if (content.rawText) {
       const wordCount = content.rawText.split(/\s+/).length;
       responseText += `## Full Content\n`;
       responseText += `**Word Count:** ${wordCount.toLocaleString()} words\n`;
-      
+
       // Add appropriate warning based on size
       const tokenWarning = generateTokenWarning(
         content.tokenCount || wordCount * 1.3, // Estimate if no token count
@@ -143,13 +172,13 @@ export const getContentDetailsTool: Tool = {
       if (tokenWarning) {
         responseText += tokenWarning + '\n';
       }
-      
+
       // Include the full content for LLM context
       responseText += `\n### Complete Text:\n\n`;
       responseText += content.rawText;
       responseText += '\n\n';
     }
-    
+
     return {
       content: [
         {
@@ -157,7 +186,7 @@ export const getContentDetailsTool: Tool = {
           text: responseText,
         },
       ],
-      data: content, // Full content including complete rawText
+      data: content,
     };
   },
 };

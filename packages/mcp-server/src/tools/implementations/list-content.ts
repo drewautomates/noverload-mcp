@@ -4,7 +4,7 @@ import { generateTokenWarning } from "../utils/context-warnings.js";
 
 export const listSavedContentTool: Tool = {
   name: "list_saved_content",
-  description: "List saved content from Noverload with summaries. For large lists (>10 items), consider using search or filters to reduce results. Full content is not included by default to save tokens.",
+  description: "Browse saved content with optional filters (status, type). Returns titles, summaries, and metadata. Best for discovering what's saved or checking processing status. For topic-specific queries, use search_content instead.",
   inputSchema: {
     type: "object",
     properties: {

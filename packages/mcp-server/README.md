@@ -39,7 +39,7 @@ npm install -g noverload-mcp
 
 ### 1. Get Your Access Token
 
-1. Log in to [Noverload](https://www.noverload.com)
+1. Log in to [Noverload](https://noverload.com)
 2. Go to Settings → Apps
 3. Click "New Token" and create a personal access token
 4. Copy the token (you won't be able to see it again)
@@ -111,7 +111,7 @@ Once configured, your AI assistant can use these tools:
 | Option        | Type    | Default                     | Description                          |
 | ------------- | ------- | --------------------------- | ------------------------------------ |
 | `accessToken` | string  | required                    | Your Noverload personal access token |
-| `apiUrl`      | string  | `https://www.noverload.com` | API endpoint (for self-hosting)      |
+| `apiUrl`      | string  | `https://noverload.com` | API endpoint (for self-hosting)      |
 | `readOnly`    | boolean | `true`                      | Restrict to read-only operations     |
 
 ## Security
@@ -122,7 +122,7 @@ Once configured, your AI assistant can use these tools:
 
 ## Support
 
-- [Documentation](https://www.noverload.com/docs)
+- [Documentation](https://noverload.com/docs)
 - [GitHub Issues](https://github.com/noverload/mcp-server/issues)
 - Email: contact@noverload.com
 

@@ -116,7 +116,7 @@ function calculateFrameworkConfidence(
 export const extractFrameworksTool: Tool = {
   name: "extract_frameworks",
   description:
-    "Extract methodologies, frameworks, and step-by-step processes from your saved content. Finds structured approaches, patterns, and repeatable techniques.",
+    "Extract structured methodologies, step-by-step processes, and repeatable techniques from saved content. Returns named frameworks with steps, components, and confidence scores (0-1). Use when learning HOW to do something. Optionally filter by query (e.g., 'marketing frameworks') or content type.",
   inputSchema: {
     type: "object",
     properties: {

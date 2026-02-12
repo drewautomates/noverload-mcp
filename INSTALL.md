@@ -10,8 +10,8 @@ This guide will walk you through installing and configuring the Noverload MCP se
 
 ## Step 1: Get Your Personal Access Token
 
-1. Log in to [Noverload](https://www.noverload.com)
-2. Navigate to [Dashboard Settings](https://www.noverload.com/dashboard/settings)
+1. Log in to [Noverload](https://noverload.com)
+2. Navigate to [Dashboard Settings](https://noverload.com/dashboard/settings)
 3. Find the "Personal Access Tokens" section
 4. Click "New Token" and give it a descriptive name (e.g., "Claude MCP")
 5. **Important**: Copy your token immediately - it won't be shown again!
@@ -31,7 +31,7 @@ This is the **easiest approach** - no installation needed! Just copy and paste:
       "command": "npx",
       "args": ["-y", "noverload-mcp@latest"],
       "env": {
-        "NOVERLOAD_CONFIG": "{\"accessToken\":\"YOUR_TOKEN_HERE\",\"apiUrl\":\"https://www.noverload.com\",\"readOnly\":true}"
+        "NOVERLOAD_CONFIG": "{\"accessToken\":\"YOUR_TOKEN_HERE\",\"apiUrl\":\"https://noverload.com\",\"readOnly\":true}"
       }
     }
   }
@@ -64,7 +64,7 @@ npm install -g noverload-mcp
       "command": "noverload-mcp",
       "args": [],
       "env": {
-        "NOVERLOAD_CONFIG": "{\"accessToken\":\"YOUR_TOKEN_HERE\",\"apiUrl\":\"https://www.noverload.com\",\"readOnly\":true}"
+        "NOVERLOAD_CONFIG": "{\"accessToken\":\"YOUR_TOKEN_HERE\",\"apiUrl\":\"https://noverload.com\",\"readOnly\":true}"
       }
     }
   }
@@ -189,7 +189,7 @@ Only needed for self-hosted instances
 
 ## Getting Help
 
-- **Documentation**: [Noverload Docs](https://www.noverload.com/docs/integrations/mcp)
+- **Documentation**: [Noverload Docs](https://noverload.com/docs/integrations/mcp)
 - **Issues**: [GitHub Issues](https://github.com/noverload/mcp-server/issues)
 - **Support**: support@noverload.com
 

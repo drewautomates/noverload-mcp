@@ -3,7 +3,7 @@ import { Tool } from "../types.js";
 
 export const batchGetContentTool: Tool = {
   name: "batch_get_content",
-  description: "Fetch multiple content items in a single request. Efficient for bulk operations.",
+  description: "Fetch multiple content items by their IDs in one request. Use after search_content to retrieve specific items. Returns summaries by default. Set includeFullContent: true for full text (tokens are additive across items - 5 articles could be 50k+ tokens).",
   inputSchema: {
     type: "object",
     properties: {
