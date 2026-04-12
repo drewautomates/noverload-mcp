@@ -1117,4 +1117,70 @@ export class NoverloadClient {
     const data = await response.json();
     return SwipeFileStatusResponseSchema.parse(data);
   }
+
+  // Concept methods
+  async listConcepts(filters?: {
+    search?: string;
+    status?: string;
+    limit?: number;
+  }): Promise<ConceptResponse[]> {
+    const params = new URLSearchParams();
+    if (filters?.search) params.append("search", filters.search);
+    if (filters?.status) params.append("status", filters.status);
+    if (filters?.limit) params.append("limit", filters.limit.toString());
+
+    const response = await this.request(`/api/mcp/v2/concepts?${params}`);
+    if (!response.ok) {
+      throw new Error("Failed to list concepts");
+    }
+
+    const data = await response.json() as { concepts: ConceptResponse[] };
+    return data.concepts ?? [];
+  }
+
+  async getConceptDetails(slug: string): Promise<ConceptDetailResponse> {
+    const response = await this.request(`/api/mcp/v2/concepts?slug=${encodeURIComponent(slug)}`);
+    if (!response.ok) {
+      throw new Error(`Failed to get concept: ${slug}`);
+    }
+
+    return await response.json() as ConceptDetailResponse;
+  }
+}
+
+// Concept response types
+export interface ConceptResponse {
+  id: string;
+  title: string;
+  slug: string;
+  description: string | null;
+  content: string | null;
+  summary: Record<string, unknown> | null;
+  sourceCount: number;
+  status: string;
+  compilationVersion: number;
+  lastCompiledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConceptDetailResponse extends ConceptResponse {
+  sources: Array<{
+    sourceId: string;
+    relationship: string;
+    relevanceScore: string | null;
+    excerpt: string | null;
+    title: string | null;
+    type: string;
+    url: string;
+  }>;
+  connections: Array<{
+    id: string;
+    relationship: string;
+    strength: string | null;
+    description: string | null;
+    conceptId: string;
+    conceptTitle: string;
+    conceptSlug: string;
+  }>;
 }

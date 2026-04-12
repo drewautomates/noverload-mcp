@@ -11,6 +11,10 @@ import { exploreTopicTool } from "./implementations/explore-topic.js";
 import { extractFrameworksTool } from "./implementations/extract-frameworks.js";
 import { listGoalsTool } from "./implementations/goals.js";
 
+// CONCEPT TOOLS - Personal wiki / knowledge compilation
+import { listConceptsTool } from "./implementations/list-concepts.js";
+import { getConceptTool } from "./implementations/get-concept.js";
+
 // TAG TOOLS - Discovery only, management done in platform
 import { listTagsTool } from "./implementations/list-tags.js";
 
@@ -59,6 +63,12 @@ export const tools: Tool[] = [
 
   // 9. Tag discovery (management done in platform)
   listTagsTool,
+
+  // 10. Concepts: "What concepts do I have?"
+  listConceptsTool,
+
+  // 11. Concept detail: "Show me this concept page"
+  getConceptTool,
 ];
 
 // Export individual tools for testing
@@ -72,4 +82,6 @@ export {
   extractFrameworksTool,
   listGoalsTool,
   listTagsTool,
+  listConceptsTool,
+  getConceptTool,
 };

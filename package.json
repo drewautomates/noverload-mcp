@@ -1,6 +1,6 @@
 {
   "name": "noverload-mcp-monorepo",
-  "version": "0.9.3",
+  "version": "0.10.0",
   "description": "Model Context Protocol server for Noverload - Access your saved content in AI tools",
   "private": true,
   "workspaces": [
