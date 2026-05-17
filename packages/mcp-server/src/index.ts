@@ -8,10 +8,22 @@ import {
   ListPromptsRequestSchema,
   GetPromptRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 import { NoverloadClient } from "./client.js";
 import { resources } from "./resources/index.js";
 import { tools } from "./tools/index.js";
+
+// Single source of truth for the advertised server version: the package.json.
+// Resolved relative to this module so it stays correct from both src/ and dist/.
+const pkg = JSON.parse(
+  readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "../package.json"),
+    "utf8"
+  )
+) as { version: string };
 
 const ConfigSchema = z.object({
   accessToken: z.string().min(1, "Access token is required"),
@@ -104,7 +116,7 @@ batch_get_content(ids) → get full text for key sources only
   const server = new McpServer(
     {
       name: "noverload-mcp",
-      version: "0.9.1",
+      version: pkg.version,
     },
     {
       capabilities: {
