@@ -164,8 +164,20 @@ batch_get_content(ids) → get full text for key sources only
 
   // Register tools using McpServer so the SDK advertises and handles list/call automatically
   for (const t of tools) {
-    const zodShape = jsonSchemaToZodShape(t.inputSchema as any);
-    server.registerTool(
+    const zodShape: z.ZodRawShape = jsonSchemaToZodShape(t.inputSchema as any);
+    // The SDK's generic registerTool over a dynamic shape triggers TS2589
+    // (excessively deep instantiation). Call it through a fixed, non-generic
+    // signature — behaviour is unchanged, args are still validated by handlers.
+    const registerTool = server.registerTool.bind(server) as (
+      name: string,
+      config: {
+        description: string;
+        inputSchema: z.ZodRawShape;
+        annotations?: Record<string, unknown>;
+      },
+      handler: (args: Record<string, unknown>) => Promise<unknown>
+    ) => void;
+    registerTool(
       t.name,
       {
         description: t.description,
