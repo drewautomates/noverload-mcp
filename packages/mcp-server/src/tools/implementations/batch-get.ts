@@ -107,6 +107,18 @@ export const batchGetContentTool: Tool = {
       responseText += `- The IDs format may be incorrect (should be UUIDs)\n`;
     }
     
+    // When full content is included it's already rendered in the readable block
+    // above. Strip rawText/raw_text from the structured data so each transcript
+    // isn't emitted twice (the bug that doubled the token cost of full fetches).
+    const dataResults =
+      params.includeFullContent && Array.isArray(contents)
+        ? contents.map((item: any) => {
+            if (!item || typeof item !== "object") return item;
+            const { rawText: _rawText, raw_text: _raw_text, ...rest } = item;
+            return rest;
+          })
+        : contents;
+
     return {
       content: [
         {
@@ -115,7 +127,7 @@ export const batchGetContentTool: Tool = {
         },
       ],
       data: {
-        results: contents,
+        results: dataResults,
         metadata: result.metadata || {
           found: resultCount,
           requested: params.ids.length,

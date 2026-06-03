@@ -18,6 +18,9 @@ import { getConceptTool } from "./implementations/get-concept.js";
 // TAG TOOLS - Discovery only, management done in platform
 import { listTagsTool } from "./implementations/list-tags.js";
 
+// FOLDER TOOLS - Discovery only, management done in platform
+import { listFoldersTool } from "./implementations/list-folders.js";
+
 // ARCHIVED TOOLS (in _archived/ folder for potential future use):
 // - synthesize.ts: explore_topic does this better
 // - extract-insights.ts: LLMs can extract insights from raw content
@@ -64,10 +67,13 @@ export const tools: Tool[] = [
   // 9. Tag discovery (management done in platform)
   listTagsTool,
 
-  // 10. Concepts: "What concepts do I have?"
+  // 10. Folder discovery (management done in platform)
+  listFoldersTool,
+
+  // 11. Concepts: "What concepts do I have?"
   listConceptsTool,
 
-  // 11. Concept detail: "Show me this concept page"
+  // 12. Concept detail: "Show me this concept page"
   getConceptTool,
 ];
 
@@ -82,6 +88,7 @@ export {
   extractFrameworksTool,
   listGoalsTool,
   listTagsTool,
+  listFoldersTool,
   listConceptsTool,
   getConceptTool,
 };

@@ -92,7 +92,17 @@ function isRelevantToTopic(text: string, keywords: string[]): boolean {
 
 export const exploreTopicTool: Tool = {
   name: "explore_topic",
-  description: "Synthesize insights about a topic across multiple saved sources (~1-2k tokens). Returns cross-source themes, key insights, connections, and knowledge gaps. More token-efficient than fetching individual items. Use for research questions, finding patterns, or understanding a topic from multiple perspectives.",
+  description: `Synthesize across multiple saved sources on a topic (~1–2k tokens, vs 20k+ for raw content).
+
+Returns a structured report with these sections:
+  • Overview — executive summary across all matched sources
+  • Key Insights — ranked, topic-filtered takeaways (max 10)
+  • Key Themes — recurring patterns with frequency counts (e.g., "first-principles thinking — 4 sources")
+  • Connections — links between concepts across sources (when includeConnections=true)
+  • Knowledge Gaps — what's missing or under-discussed in the saved content
+  • Top Sources — 5 most relevant items with titles + URLs
+
+Use for: "what do my saves collectively say about X", competitive landscape mapping, finding contrarian/open lanes, research questions spanning >1 source. Skips raw text — call get_content_details only if you need exact quotes after. Pass folderId (from list_folders) to scope the exploration to a single folder — synthesize the topic within how the user organized their content.`,
   inputSchema: {
     type: "object",
     properties: {
@@ -111,6 +121,11 @@ export const exploreTopicTool: Tool = {
         description: "Find connections to related topics",
         default: true,
       },
+      folderId: {
+        type: "string",
+        description:
+          "Optional: scope the exploration to one of the user's folders (use the id from list_folders). Synthesizes the topic across only that folder's content.",
+      },
       maxSources: {
         type: "number",
         description: "Maximum number of sources to analyze",
@@ -125,21 +140,59 @@ export const exploreTopicTool: Tool = {
       topic: z.string(),
       depth: z.enum(["surface", "comprehensive", "expert"]).optional().default("comprehensive"),
       includeConnections: z.boolean().optional().default(true),
+      folderId: z.string().optional(),
       maxSources: z.number().optional().default(20),
     });
     const params = schema.parse(args);
-    
-    // Search for all content related to the topic
-    const searchResults = await client.searchContent(params.topic, {
-      limit: params.maxSources,
-      enableConceptExpansion: true,
-      fuzzyMatch: true,
-    }) as SearchResult[];
+
+    // Gather candidate sources. When scoped to a folder, the folder IS the scope:
+    // pull its contents and rank by topic relevance rather than searching globally.
+    // Otherwise, use semantic search across the whole library.
+    let searchResults: SearchResult[];
+    if (params.folderId) {
+      const folderKeywords = extractTopicKeywords(params.topic);
+      const folderContent = (await client.listContent({
+        folderId: params.folderId,
+        limit: 100,
+      })) as SearchResult[];
+
+      // Prefer items whose title/summary match the topic, but keep the rest so a
+      // vague topic ("explore my ORB folder") still synthesizes the whole folder.
+      const scored = folderContent.map((item) => {
+        const summaryText =
+          typeof item.summary === "string"
+            ? item.summary
+            : ((item.summary as { one_sentence?: string; text?: string } | null)?.one_sentence ??
+               (item.summary as { one_sentence?: string; text?: string } | null)?.text ??
+               "");
+        const haystack = `${item.title ?? ""} ${summaryText}`;
+        const matches =
+          folderKeywords.length === 0 || isRelevantToTopic(haystack, folderKeywords);
+        return { item, matches };
+      });
+      searchResults = [
+        ...scored.filter((s) => s.matches).map((s) => s.item),
+        ...scored.filter((s) => !s.matches).map((s) => s.item),
+      ].slice(0, params.maxSources);
+    } else {
+      // Search for all content related to the topic
+      searchResults = (await client.searchContent(params.topic, {
+        limit: params.maxSources,
+        enableConceptExpansion: true,
+        fuzzyMatch: true,
+      })) as SearchResult[];
+    }
 
     if (!searchResults || searchResults.length === 0) {
       const terms = params.topic.split(/\s+/).filter((t) => t.length > 2);
-      let suggestions = `No content found for topic: "${params.topic}".\n\n`;
+      let suggestions = params.folderId
+        ? `No content found in that folder for topic: "${params.topic}".\n\n`
+        : `No content found for topic: "${params.topic}".\n\n`;
       suggestions += `**Suggestions:**\n`;
+      if (params.folderId) {
+        suggestions += `- The folder may be empty — check with \`list_folders\` or \`list_saved_content\` (folderId)\n`;
+        suggestions += `- Remove folderId to explore across your whole library\n`;
+      }
       suggestions += `- Try broader terms (e.g., "${terms[0] || params.topic}")\n`;
       suggestions += `- Use \`search_content\` with \`searchMode: "any"\` for looser matching\n`;
       suggestions += `- Use \`list_saved_content\` to browse what's available\n`;

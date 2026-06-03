@@ -4,7 +4,7 @@ import { generateTokenWarning } from "../utils/context-warnings.js";
 
 export const listSavedContentTool: Tool = {
   name: "list_saved_content",
-  description: "Browse saved content with optional filters (status, type). Returns titles, summaries, and metadata. Best for discovering what's saved or checking processing status. For topic-specific queries, use search_content instead.",
+  description: "Browse saved content with optional filters (status, type, folder). Returns titles, summaries, and metadata. Best for discovering what's saved or checking processing status. Pass folderId (from list_folders) to scope to one of the user's folders — the way they've organized content. For topic-specific queries, use search_content instead.",
   inputSchema: {
     type: "object",
     properties: {
@@ -18,6 +18,10 @@ export const listSavedContentTool: Tool = {
         enum: ["youtube", "x_twitter", "reddit", "article", "pdf"],
         description: "Filter by content type",
       },
+      folderId: {
+        type: "string",
+        description: "Filter to a specific folder (use the id from list_folders)",
+      },
       limit: {
         type: "number",
         description: "Maximum number of items to return (default: 20, recommended: ≤10 for detailed view)",
@@ -30,6 +34,7 @@ export const listSavedContentTool: Tool = {
     const schema = z.object({
       status: z.enum(["pending", "processing", "completed", "failed"]).optional(),
       contentType: z.enum(["youtube", "x_twitter", "reddit", "article", "pdf"]).optional(),
+      folderId: z.string().optional(),
       limit: z.number().optional().default(20),
     });
     const params = schema.parse(args);
@@ -48,6 +53,11 @@ export const listSavedContentTool: Tool = {
     const filters = [];
     if (params.status) filters.push(`status: ${params.status}`);
     if (params.contentType) filters.push(`type: ${params.contentType}`);
+    if (params.folderId) {
+      // Prefer the human-readable folder name if the results carry it
+      const folderName = content.find((item) => item.folderName)?.folderName;
+      filters.push(`folder: ${folderName || params.folderId}`);
+    }
     if (filters.length > 0) {
       responseText += ` (filtered by ${filters.join(', ')})`;
     }
@@ -74,7 +84,10 @@ export const listSavedContentTool: Tool = {
           }
         }
         responseText += `\n**URL:** ${item.url}\n`;
-        
+        if (item.folderName) {
+          responseText += `**Folder:** ${item.folderName}\n`;
+        }
+
         if (item.summary) {
           const summaryObj = typeof item.summary === 'string' 
             ? { text: item.summary } 

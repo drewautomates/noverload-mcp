@@ -61,6 +61,10 @@ export const ContentSchema = z.object({
   // Tags default to empty array (API convention)
   tags: z.array(z.string()).optional().default([]),
 
+  // Folder organization - the user's custom folder this item lives in, if any
+  folderId: z.string().nullable().optional(),
+  folderName: z.string().nullable().optional(),
+
   // Timestamps - optional, no fabrication if missing
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
@@ -108,6 +112,22 @@ export const TagsResponseSchema = z.object({
     system: z.array(TagSchema),
     custom: z.array(TagSchema),
   }).optional(),
+  total: z.number(),
+});
+
+export const FolderSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  icon: z.string().nullable().optional(),
+  color: z.string().nullable().optional(),
+  sortOrder: z.number().nullable().optional(),
+  contentCount: z.number().optional().default(0),
+});
+
+export const FoldersResponseSchema = z.object({
+  success: z.boolean(),
+  folders: z.array(FolderSchema),
   total: z.number(),
 });
 
@@ -188,6 +208,8 @@ export type Action = z.infer<typeof ActionSchema>;
 export type Goal = z.infer<typeof GoalSchema>;
 export type Tag = z.infer<typeof TagSchema>;
 export type TagsResponse = z.infer<typeof TagsResponseSchema>;
+export type Folder = z.infer<typeof FolderSchema>;
+export type FoldersResponse = z.infer<typeof FoldersResponseSchema>;
 export type CreateTagResponse = z.infer<typeof CreateTagResponseSchema>;
 export type AddTagsResponse = z.infer<typeof AddTagsResponseSchema>;
 export type RemoveTagsResponse = z.infer<typeof RemoveTagsResponseSchema>;
@@ -265,7 +287,10 @@ export class NoverloadClient {
       description: item.description ?? null,
 
       // Fields with defaults handled by schema
-      contentType: item.contentType ?? item.content_type ?? undefined,
+      // NOTE: v2 API returns the content type as `type`. Without this fallback the
+      // value is undefined and the Zod schema defaults it to "article", which made
+      // list_saved_content report every YouTube item as an article.
+      contentType: item.contentType ?? item.content_type ?? item.type ?? undefined,
       status: item.status ?? undefined,
 
       // Content fields
@@ -279,6 +304,10 @@ export class NoverloadClient {
       // Tags
       tags: item.tags ?? undefined,
 
+      // Folder organization
+      folderId: item.folderId ?? item.folder_id ?? undefined,
+      folderName: item.folderName ?? item.folder_name ?? undefined,
+
       // Timestamps - pass through as-is, no fabrication
       createdAt: item.createdAt ?? item.created_at ?? undefined,
       updatedAt: item.updatedAt ?? item.updated_at ?? undefined,
@@ -289,11 +318,13 @@ export class NoverloadClient {
   async listContent(filters?: {
     status?: string;
     contentType?: string;
+    folderId?: string;
     limit?: number;
   }): Promise<Content[]> {
     const params = new URLSearchParams();
     if (filters?.status) params.append("status", filters.status);
     if (filters?.contentType) params.append("type", filters.contentType);
+    if (filters?.folderId) params.append("folderId", filters.folderId);
     if (filters?.limit) params.append("limit", filters.limit.toString());
 
     const response = await this.request(`/api/mcp/v2/content?${params}`);
@@ -707,6 +738,8 @@ export class NoverloadClient {
     findContradictions?: boolean;
     findConnections?: boolean;
     maxSources?: number;
+    contentTypes?: string[];
+    allowRecentFallback?: boolean;
   }): Promise<any> {
     try {
       // If no content IDs provided, search for relevant content first
@@ -720,6 +753,7 @@ export class NoverloadClient {
         const searchResults = await this.searchContent(params.query, {
           limit: params.maxSources || 10,
           enableConceptExpansion: true,
+          contentTypes: params.contentTypes,
         });
 
         if (searchResults && searchResults.length > 0) {
@@ -727,8 +761,11 @@ export class NoverloadClient {
           console.log(`[Synthesis] Found ${sourceIds?.length || 0} sources via search`);
         }
 
-        // If search found nothing, try getting recent content as fallback
-        if (!sourceIds || sourceIds.length === 0) {
+        // If search found nothing, try getting recent content as fallback.
+        // Callers that need topic-relevant sources (e.g. extract_frameworks) opt
+        // out: returning "recent everything" here is the source pollution where a
+        // query for "ORB" surfaces frameworks from unrelated recent saves.
+        if ((!sourceIds || sourceIds.length === 0) && params.allowRecentFallback !== false) {
           console.log("[Synthesis] Search returned no results, trying recent content");
           try {
             const recentContent = await this.listContent({ limit: params.maxSources || 5 });
@@ -949,6 +986,25 @@ export class NoverloadClient {
 
     const data = await response.json();
     return TagsResponseSchema.parse(data);
+  }
+
+  async listFolders(): Promise<FoldersResponse> {
+    const response = await this.request("/api/mcp/folders");
+
+    if (!response.ok) {
+      let errorMessage = "Failed to fetch folders";
+      try {
+        const errorData = await response.json() as { message?: string; error?: string };
+        if (errorData.message) errorMessage = errorData.message;
+        else if (errorData.error) errorMessage = errorData.error;
+      } catch {
+        errorMessage = `${errorMessage} (HTTP ${response.status})`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    return FoldersResponseSchema.parse(data);
   }
 
   async createTag(name: string): Promise<CreateTagResponse> {

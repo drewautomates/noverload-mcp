@@ -115,8 +115,21 @@ function calculateFrameworkConfidence(
 
 export const extractFrameworksTool: Tool = {
   name: "extract_frameworks",
-  description:
-    "Extract structured methodologies, step-by-step processes, and repeatable techniques from saved content. Returns named frameworks with steps, components, and confidence scores (0-1). Use when learning HOW to do something. Optionally filter by query (e.g., 'marketing frameworks') or content type.",
+  description: `Extract named, step-by-step methodologies from saved content (~500–2k tokens).
+
+Returns an array of frameworks, each shaped like:
+  {
+    name: "CLEAR Framework",
+    type: "methodology" | "process" | "framework" | "pattern" | "technique",
+    description: "...",
+    steps: [{ order: 1, title: "...", description: "...", example?: "..." }, ...],
+    components?: [{ name, description, importance: "critical"|"important"|"optional" }],
+    useCases: ["...", "..."],
+    confidence: 0.0–1.0,   // filtered by minConfidence (default 0.7)
+    sourceContent: { id, title, url, type }
+  }
+
+Use for: "how do I do X", learning a process, building a checklist from saved content, comparing methodologies across creators. Different from explore_topic — this returns actionable steps, not themes. Pass query="marketing" to narrow to a domain.`,
   inputSchema: {
     type: "object",
     properties: {
@@ -157,11 +170,23 @@ export const extractFrameworksTool: Tool = {
         input.query ||
         "framework methodology process steps guide how to tutorial system approach";
 
-      // Use synthesis to extract frameworks from relevant content
+      // Use synthesis to extract frameworks from relevant content.
+      // IMPORTANT: pass the clean topic as the search query. Wrapping it in
+      // boilerplate like "Extract frameworks... related to: <topic>" pollutes the
+      // semantic embedding so badly that it matches generic process-y content
+      // instead of the topic. We also keep maxSources tight so the query actually
+      // constrains the set rather than pulling the entire corpus (the bug a
+      // reviewer hit: a 30-source library always returned all 30).
       const synthesisResult = await client.synthesizeContent({
-        query: `Extract frameworks, methodologies, and processes related to: ${searchQuery}`,
+        query: searchQuery,
         synthesisMode: "actionable",
-        maxSources: 30,
+        // When the user names a topic, narrow hard so relevance matters. With no
+        // topic ("show me all my frameworks"), cast wider.
+        maxSources: input.query ? 12 : 25,
+        contentTypes: input.contentTypes,
+        // With a specific topic, "no relevant matches" should mean "no frameworks
+        // found" — not "here are frameworks from random recent saves."
+        allowRecentFallback: !input.query,
       });
 
       // Handle multiple possible response formats

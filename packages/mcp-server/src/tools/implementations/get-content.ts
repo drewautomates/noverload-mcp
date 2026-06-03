@@ -179,6 +179,11 @@ export const getContentDetailsTool: Tool = {
       responseText += '\n\n';
     }
 
+    // The full text is already in the readable block above. Strip it from the
+    // structured data so the transcript isn't emitted twice (which doubled the
+    // token cost of every full-content fetch).
+    const { rawText: _rawText, ...contentWithoutRawText } = content;
+
     return {
       content: [
         {
@@ -186,7 +191,7 @@ export const getContentDetailsTool: Tool = {
           text: responseText,
         },
       ],
-      data: content,
+      data: contentWithoutRawText,
     };
   },
 };

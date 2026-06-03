@@ -43,75 +43,28 @@ async function main() {
   const transport = new StdioServerTransport();
 
   // Provide instructions for LLMs on context management
-  const instructions = `Noverload MCP: Smart knowledge management with context-aware retrieval.
+  const instructions = `Noverload MCP: query a user's saved content (YouTube, X, Reddit, articles, PDFs).
+
+## Cheatsheet — pick a tool in one line
+- \`search_content\` → find relevant items (~200 tok/result)
+- \`get_content_details\` → read one item in full (1k–50k tok)
+- \`explore_topic\` → synthesize across many items (~1–2k tok)
+- \`extract_frameworks\` → pull step-by-step methodologies (~500–2k tok)
+
+**Default flow:** \`search_content\` → answer from summaries. Only fetch full text or synthesize when summaries aren't enough.
+
+## When the cheatsheet isn't obvious
+- "What does X say about Y?" → search, then \`get_content_details\` on top hit
+- "What patterns/themes exist across my saves about X?" → \`explore_topic\`
+- "How do I do X?" → \`extract_frameworks\` with query="X"
+- Need quotes or exact wording → \`get_content_details\` (mind token count)
+- Multi-source report → \`explore_topic\` first, then \`batch_get_content\` on the IDs you want to quote
 
 ## Philosophy
-Noverload handles storage and retrieval. You handle thinking.
-Use these tools to GET content, then apply your reasoning to analyze, connect, and synthesize.
+Noverload retrieves; you reason. Summaries are usually enough — don't pull raw text by default.
 
-## Available Tools (${tools?.length || 0})
-${tools && tools.length > 0 ? tools.map((t) => t.name).join(", ") : "none"}
-
-## Retrieval Decision Tree
-
-**Start here:** What does the user need?
-
-1. **"Summarize/synthesize across my content"** → \`explore_topic\`
-   - Returns pre-extracted insights, frameworks, and patterns across sources
-   - Context-efficient (~1-2k tokens vs 20k+ for raw content)
-   - Best for: research, finding themes, cross-content analysis
-
-2. **"Find specific content about X"** → \`search_content\`
-   - Semantic search with RAG (understands concepts, not just keywords)
-   - Returns summaries + metadata (~200 tokens per result)
-   - Use \`tags\` filter to narrow results
-   - Best for: finding relevant sources before deep-diving
-
-3. **"Give me the full details"** → \`get_content_details\`
-   - Returns complete transcript/article text + all metadata
-   - Use ONLY when you need exact quotes or full context
-   - Check token count before retrieving (shown in response)
-
-4. **"What frameworks/processes exist?"** → \`noverload_extract_frameworks\`
-   - Returns structured methodologies with steps, use cases, confidence
-   - Best for: learning HOW to do something from saved content
-
-## Recommended Workflows
-
-**Quick question about saved content:**
-\`\`\`
-search_content(query) → find relevant items → answer from summaries
-\`\`\`
-
-**Deep research / synthesis:**
-\`\`\`
-explore_topic(topic, depth: "comprehensive") → get synthesized insights
-  ↓ (if needed)
-get_content_details(id) → get specific quotes/full context
-\`\`\`
-
-**Learning a methodology:**
-\`\`\`
-noverload_extract_frameworks(query) → get structured processes with steps
-\`\`\`
-
-**Creating a report across multiple sources:**
-\`\`\`
-explore_topic(topic) → get themes + connections
-  ↓
-batch_get_content(ids) → get full text for key sources only
-\`\`\`
-
-## Token Management
-| Tool | Typical Size | When to Use |
-|------|--------------|-------------|
-| explore_topic | ~1-2k tokens | First choice for multi-source questions |
-| search_content | ~200/result | Finding relevant content |
-| get_content_details | 1k-50k+ tokens | Only when full text needed |
-| noverload_extract_frameworks | ~500-2k tokens | Learning processes/methods |
-
-## Key Principle
-**Start broad, go narrow.** Use explore_topic or search_content first. Only fetch full content when you need exact quotes or deep analysis.`;
+## Available tools (${tools?.length || 0})
+${tools && tools.length > 0 ? tools.map((t) => t.name).join(", ") : "none"}`;
 
   const server = new McpServer(
     {
