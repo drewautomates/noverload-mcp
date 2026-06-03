@@ -124,7 +124,7 @@ Use for: "what do my saves collectively say about X", competitive landscape mapp
       folderId: {
         type: "string",
         description:
-          "Optional: scope the exploration to one of the user's folders (use the id from list_folders). Synthesizes the topic across only that folder's content.",
+          "Optional: scope the exploration to one of the user's folders. Accepts the folder name (e.g. \"ORB\") or its id from list_folders. Synthesizes the topic across only that folder's content.",
       },
       maxSources: {
         type: "number",
@@ -150,9 +150,11 @@ Use for: "what do my saves collectively say about X", competitive landscape mapp
     // Otherwise, use semantic search across the whole library.
     let searchResults: SearchResult[];
     if (params.folderId) {
+      // Accept a folder name or UUID; the API filter needs a UUID.
+      const resolvedFolderId = await client.resolveFolderId(params.folderId);
       const folderKeywords = extractTopicKeywords(params.topic);
       const folderContent = (await client.listContent({
-        folderId: params.folderId,
+        folderId: resolvedFolderId,
         limit: 100,
       })) as SearchResult[];
 

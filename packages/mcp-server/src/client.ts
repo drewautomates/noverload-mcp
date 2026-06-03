@@ -1007,6 +1007,38 @@ export class NoverloadClient {
     return FoldersResponseSchema.parse(data);
   }
 
+  /**
+   * Resolve a folder reference (UUID, name, or slug) to its UUID.
+   * The API's folderId filter requires a UUID, but agents naturally have the
+   * folder NAME from list_folders. Accept either: if it already looks like a
+   * UUID, pass it through; otherwise match a folder by name/slug (case-insensitive).
+   * Throws a helpful error listing valid folders if no match is found.
+   */
+  async resolveFolderId(folderRef: string): Promise<string> {
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (UUID_RE.test(folderRef)) {
+      return folderRef;
+    }
+
+    const { folders } = await this.listFolders();
+    const needle = folderRef.trim().toLowerCase();
+    const match = folders.find(
+      (f) =>
+        f.name.toLowerCase() === needle ||
+        f.name.toLowerCase().replace(/\s+/g, "-") === needle
+    );
+
+    if (!match) {
+      const available = folders.map((f) => `"${f.name}"`).join(", ");
+      throw new Error(
+        `No folder matching "${folderRef}". Available folders: ${available || "(none)"}. ` +
+          `Use list_folders to see folder names and IDs.`
+      );
+    }
+
+    return match.id;
+  }
+
   async createTag(name: string): Promise<CreateTagResponse> {
     if (this.config.readOnly) {
       throw new Error("Cannot create tag in read-only mode");

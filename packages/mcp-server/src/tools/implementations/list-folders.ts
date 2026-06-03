@@ -49,13 +49,14 @@ export const listFoldersTool: Tool = {
         const countText =
           params.showCounts ? ` (${folder.contentCount || 0})` : "";
         responseText += `${icon} **${folder.name}**${countText}\n`;
+        responseText += `   ID: \`${folder.id}\`\n`;
         if (folder.description) {
           responseText += `   ${folder.description}\n`;
         }
       }
 
       responseText += `\n---\n`;
-      responseText += `Tip: Use \`list_saved_content\` or \`search_content\` to browse content, then reference these folders when organizing.`;
+      responseText += `Tip: Pass a folder's \`ID\` (or its name) as \`folderId\` to \`list_saved_content\` or \`explore_topic\` to scope to that folder.`;
     }
 
     return {

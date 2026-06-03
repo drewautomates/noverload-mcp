@@ -20,7 +20,7 @@ export const listSavedContentTool: Tool = {
       },
       folderId: {
         type: "string",
-        description: "Filter to a specific folder (use the id from list_folders)",
+        description: "Filter to a specific folder. Accepts the folder name (e.g. \"ORB\") or its id from list_folders.",
       },
       limit: {
         type: "number",
@@ -38,7 +38,17 @@ export const listSavedContentTool: Tool = {
       limit: z.number().optional().default(20),
     });
     const params = schema.parse(args);
-    const content = await client.listContent(params);
+
+    // Accept a folder name or UUID; the API filter needs a UUID.
+    let resolvedFolderId: string | undefined;
+    if (params.folderId) {
+      resolvedFolderId = await client.resolveFolderId(params.folderId);
+    }
+
+    const content = await client.listContent({
+      ...params,
+      folderId: resolvedFolderId,
+    });
     
     // Calculate estimated token usage for awareness
     const estimatedTokens = content.reduce((sum, item) => {
