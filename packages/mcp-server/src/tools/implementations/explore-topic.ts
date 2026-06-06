@@ -191,19 +191,13 @@ After calling this, synthesize the material into a direct answer: weigh the cont
       };
     }
 
-    // The synthesis endpoint extracts insights/frameworks from ALL matched
-    // sources, even off-topic ones. Filter to the topic client-side.
-    const topicKeywords = extractTopicKeywords(params.topic);
-    const insights =
-      topicKeywords.length > 0
-        ? substrate.insights.filter((i) => isRelevantToTopic(i.text, topicKeywords))
-        : substrate.insights;
-    const frameworks =
-      topicKeywords.length > 0
-        ? substrate.frameworks.filter((f) =>
-            isRelevantToTopic(`${f.name} ${f.description}`, topicKeywords)
-          )
-        : substrate.frameworks;
+    // The source set is already topic-scoped (semantic search, or the chosen
+    // folder). Do NOT re-filter individual insights/frameworks by literal
+    // keyword — that throws away semantically-relevant material that just
+    // doesn't contain the exact word (e.g. a leadership insight phrased without
+    // "leadership"). Hand the full substrate over and let the calling LLM judge.
+    const insights = substrate.insights;
+    const frameworks = substrate.frameworks;
 
     const typeIcons: Record<string, string> = {
       youtube: "📺",

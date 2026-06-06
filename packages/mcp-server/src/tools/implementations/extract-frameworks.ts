@@ -152,7 +152,7 @@ Use for: "how do I do X", learning a process, building a checklist from saved co
       );
 
       // Map substrate frameworks (real steps + confidence) into our shape.
-      let allFrameworks: Framework[] = substrate.frameworks.map((f) => {
+      const allFrameworks: Framework[] = substrate.frameworks.map((f) => {
         const meta = sourceMeta.get(f.sourceId);
         const validType = (
           ["methodology", "process", "framework", "pattern", "technique"] as const
@@ -189,20 +189,12 @@ Use for: "how do I do X", learning a process, building a checklist from saved co
         };
       });
 
-      // When the user named a topic, keep only frameworks that actually match it —
-      // the synthesis endpoint surfaces every framework from the matched sources.
-      if (input.query) {
-        const keywords = input.query
-          .toLowerCase()
-          .split(/\s+/)
-          .filter((w) => w.length > 2);
-        if (keywords.length > 0) {
-          allFrameworks = allFrameworks.filter((f) => {
-            const haystack = `${f.name} ${f.description}`.toLowerCase();
-            return keywords.some((k) => haystack.includes(k));
-          });
-        }
-      }
+      // No literal-keyword post-filter here. When a query is given, getSubstrate
+      // already narrowed the source set semantically (maxSources 12); re-filtering
+      // frameworks by exact-word match drops relevant methodologies whose name or
+      // description simply doesn't repeat the query term (e.g. a leadership
+      // framework called "The Power of Better Questions"). minConfidence below is
+      // the real quality gate.
 
       if (allFrameworks.length === 0) {
         return {
