@@ -217,6 +217,58 @@ export type MarkSwipeFileResponse = z.infer<typeof MarkSwipeFileResponseSchema>;
 export type UnmarkSwipeFileResponse = z.infer<typeof UnmarkSwipeFileResponseSchema>;
 export type SwipeFileStatusResponse = z.infer<typeof SwipeFileStatusResponseSchema>;
 
+// Structured synthesis material returned by the v2 synthesis endpoint in
+// mode:"substrate" (Phase 1). The MCP renders this for a client-side LLM to
+// synthesize — nothing is templated/flattened server-side, no server LLM runs.
+export interface SynthesisSubstrate {
+  topic: string;
+  sourcesAnalyzed: number;
+  insights: {
+    text: string;
+    sourceId: string;
+    sourceTitle: string;
+    confidence: number;
+  }[];
+  contradictionCandidates: {
+    claimA: string;
+    sourceA: string;
+    claimB: string;
+    sourceB: string;
+  }[];
+  sourceRelationships: {
+    sourceId: string;
+    title: string;
+    url: string;
+    type: string;
+    relationship?:
+      | "supports"
+      | "contradicts"
+      | "extends"
+      | "example"
+      | "foundational";
+    excerpt: string;
+  }[];
+  themes: { theme: string; sourceCount: number }[];
+  frameworks: {
+    name: string;
+    type: string;
+    description: string;
+    steps: { order: number; title: string; description: string }[];
+    components: { name: string; description: string; importance: string }[];
+    useCases: string[];
+    sourceId: string;
+    sourceTitle: string;
+    confidence: number;
+  }[];
+}
+
+export interface SubstrateResponse {
+  success: boolean;
+  substrate: SynthesisSubstrate | null;
+  sources?: { id: string; title: string; type: string; url: string }[];
+  error?: string;
+}
+
 export class NoverloadClient {
   private headers: Record<string, string>;
 
@@ -836,6 +888,96 @@ export class NoverloadClient {
       // Try v1 fallback
       return this.synthesizeContentV1(params, params.contentIds);
     }
+  }
+
+  /**
+   * Fetch structured synthesis substrate (Phase 1) for a client-side LLM to
+   * synthesize from. Resolves sources the same way synthesizeContent does
+   * (explicit ids → semantic search → optional recent fallback), then requests
+   * the v2 endpoint in mode:"substrate". Unlike synthesizeContent this returns
+   * raw structured material (insights, contradiction candidates, typed source
+   * relationships, themes, frameworks-with-steps) — nothing templated away.
+   */
+  async getSubstrate(params: {
+    query: string;
+    contentIds?: string[];
+    maxSources?: number;
+    contentTypes?: string[];
+    allowRecentFallback?: boolean;
+    focusAreas?: string[];
+  }): Promise<SubstrateResponse> {
+    let sourceIds = params.contentIds;
+
+    if (!sourceIds || sourceIds.length === 0) {
+      const searchResults = await this.searchContent(params.query, {
+        limit: params.maxSources || 20,
+        enableConceptExpansion: true,
+        contentTypes: params.contentTypes,
+      });
+      if (searchResults && searchResults.length > 0) {
+        sourceIds = searchResults
+          .map((item: any) => item.id)
+          .filter((id: any) => id);
+      }
+
+      // Topic-scoped callers opt out of the "recent everything" fallback so a
+      // no-match query returns nothing rather than unrelated recent saves.
+      if (
+        (!sourceIds || sourceIds.length === 0) &&
+        params.allowRecentFallback !== false
+      ) {
+        const recentContent = await this.listContent({
+          limit: params.maxSources || 10,
+        });
+        if (recentContent && recentContent.length > 0) {
+          sourceIds = recentContent
+            .map((item: any) => item.id)
+            .filter((id: any) => id);
+        }
+      }
+
+      if (!sourceIds || sourceIds.length === 0) {
+        return {
+          success: false,
+          substrate: null,
+          error:
+            "No content found to synthesize. Save some content first or provide specific content IDs.",
+        };
+      }
+    }
+
+    const body = {
+      sources: {
+        contentIds: sourceIds,
+        query: params.query,
+        limit: params.maxSources || 20,
+      },
+      synthesis: {
+        mode: "substrate",
+        focusAreas: params.focusAreas,
+      },
+      output: {
+        // Route enforces a 5–50 range; clamp so small maxSources values don't 400.
+        maxItems: Math.min(50, Math.max(5, params.maxSources || 20)),
+      },
+    };
+
+    const response = await this.request("/api/mcp/v2/synthesis", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      return {
+        success: false,
+        substrate: null,
+        error: `Synthesis substrate request failed (${response.status}): ${errorText}`,
+      };
+    }
+
+    const data = (await response.json()) as SubstrateResponse;
+    return data;
   }
 
   // Fallback v1 synthesis method

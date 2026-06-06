@@ -2,18 +2,6 @@ import { z } from "zod";
 import { NoverloadClient } from "../../client.js";
 import { Tool } from "../types.js";
 
-// Interface for synthesis insight from API
-interface SynthesisInsight {
-  text?: string;
-  insight?: string;
-  source?: {
-    id?: string;
-    title?: string;
-    url?: string;
-    type?: string;
-  };
-}
-
 const inputSchema = z.object({
   query: z
     .string()
@@ -66,52 +54,6 @@ interface Framework {
   }[];
 }
 
-/**
- * Calculate confidence score for a framework based on various factors
- */
-function calculateFrameworkConfidence(
-  name: string,
-  description: string,
-  steps: Array<{order: number; title: string; description: string}>,
-  hasSource: boolean
-): number {
-  let confidence = 0.5; // Base confidence
-
-  // Named framework pattern (e.g., "MOAT Framework", "3-Step Method")
-  const namedFrameworkPattern = /\b([A-Z][A-Za-z0-9\-]+\s+)?(Framework|Method|Process|System|Approach|Model|Strategy|Technique)\b/i;
-  if (namedFrameworkPattern.test(name)) {
-    confidence += 0.15;
-  }
-
-  // Has numbered/lettered prefix (e.g., "3-Step", "4-Part", "ABC")
-  if (/\b\d+[-\s]?(step|part|phase|stage|point|pillar)/i.test(name) || /\b[A-Z]{2,5}\b/.test(name)) {
-    confidence += 0.1;
-  }
-
-  // Has clear steps extracted
-  if (steps.length >= 2) {
-    confidence += 0.1;
-    if (steps.length >= 4) {
-      confidence += 0.05; // More steps = more structured
-    }
-  }
-
-  // Description quality
-  if (description.length > 100) {
-    confidence += 0.05;
-  }
-  if (description.length > 200) {
-    confidence += 0.05;
-  }
-
-  // Has source attribution
-  if (hasSource) {
-    confidence += 0.05;
-  }
-
-  // Cap at 0.95
-  return Math.min(0.95, Math.round(confidence * 100) / 100);
-}
 
 export const extractFrameworksTool: Tool = {
   name: "extract_frameworks",
@@ -170,35 +112,30 @@ Use for: "how do I do X", learning a process, building a checklist from saved co
         input.query ||
         "framework methodology process steps guide how to tutorial system approach";
 
-      // Use synthesis to extract frameworks from relevant content.
-      // IMPORTANT: pass the clean topic as the search query. Wrapping it in
-      // boilerplate like "Extract frameworks... related to: <topic>" pollutes the
-      // semantic embedding so badly that it matches generic process-y content
-      // instead of the topic. We also keep maxSources tight so the query actually
-      // constrains the set rather than pulling the entire corpus (the bug a
-      // reviewer hit: a 30-source library always returned all 30).
-      const synthesisResult = await client.synthesizeContent({
+      // Pull structured substrate. Frameworks already carry their real steps from
+      // ai_insights — no regex-scraping of prose. IMPORTANT: pass the clean topic
+      // as the query; wrapping it in boilerplate pollutes the semantic embedding.
+      // Keep maxSources tight when a topic is named so relevance actually
+      // constrains the set (the bug a reviewer hit: a 30-source library returned
+      // all 30). With a specific topic, "no relevant matches" must mean "no
+      // frameworks found" — not frameworks from random recent saves.
+      const substrateResult = await client.getSubstrate({
         query: searchQuery,
-        synthesisMode: "actionable",
-        // When the user names a topic, narrow hard so relevance matters. With no
-        // topic ("show me all my frameworks"), cast wider.
         maxSources: input.query ? 12 : 25,
         contentTypes: input.contentTypes,
-        // With a specific topic, "no relevant matches" should mean "no frameworks
-        // found" — not "here are frameworks from random recent saves."
         allowRecentFallback: !input.query,
       });
 
-      // Handle multiple possible response formats
-      const synthData = synthesisResult.synthesis || synthesisResult;
-      const insights = synthData.insights || synthData.actionableInsights || synthesisResult.insights || synthesisResult.actionableInsights || [];
+      const substrate = substrateResult.substrate;
 
-      if (!insights || insights.length === 0) {
+      if (!substrate || substrate.frameworks.length === 0) {
         return {
           content: [
             {
               type: "text",
-              text: "🔍 No frameworks found in your saved content. Try saving content about methodologies, tutorials, or how-to guides first.",
+              text:
+                substrateResult.error ||
+                "🔍 No frameworks found in your saved content. Try saving content about methodologies, tutorials, or how-to guides first.",
             },
           ],
           data: {
@@ -209,101 +146,61 @@ Use for: "how do I do X", learning a process, building a checklist from saved co
         };
       }
 
-      // Extract frameworks from synthesis insights
-      const allFrameworks: Framework[] = [];
+      // Join source metadata (url/type) from sourceRelationships by id.
+      const sourceMeta = new Map(
+        substrate.sourceRelationships.map((s) => [s.sourceId, s])
+      );
 
-      for (const rawInsight of insights) {
-        // Normalize insight to our interface
-        const insight: SynthesisInsight = typeof rawInsight === 'string'
-          ? { text: rawInsight }
-          : rawInsight as SynthesisInsight;
+      // Map substrate frameworks (real steps + confidence) into our shape.
+      let allFrameworks: Framework[] = substrate.frameworks.map((f) => {
+        const meta = sourceMeta.get(f.sourceId);
+        const validType = (
+          ["methodology", "process", "framework", "pattern", "technique"] as const
+        ).includes(f.type as Framework["type"])
+          ? (f.type as Framework["type"])
+          : "framework";
+        return {
+          name: f.name,
+          type: validType,
+          description: f.description,
+          steps: f.steps.length > 0 ? f.steps : undefined,
+          components:
+            f.components.length > 0
+              ? f.components.map((c) => ({
+                  name: c.name,
+                  description: c.description,
+                  importance: (["critical", "important", "optional"].includes(
+                    c.importance
+                  )
+                    ? c.importance
+                    : "important") as "critical" | "important" | "optional",
+                }))
+              : undefined,
+          useCases: f.useCases,
+          confidence: f.confidence,
+          sourceContent: f.sourceId
+            ? {
+                id: f.sourceId,
+                title: f.sourceTitle || meta?.title || "Unknown Source",
+                url: meta?.url || "",
+                type: meta?.type || "article",
+              }
+            : undefined,
+        };
+      });
 
-        // Check if this insight describes a framework
-        const text = insight.text || insight.insight;
-        const source = insight.source || null;
-        
-        // Look for framework indicators
-        if (text && (
-          text.toLowerCase().includes('framework') ||
-          text.toLowerCase().includes('methodology') ||
-          text.toLowerCase().includes('process') ||
-          text.toLowerCase().includes('step') ||
-          text.toLowerCase().includes('approach') ||
-          text.toLowerCase().includes('system')
-        )) {
-          // Extract framework name from the text
-          let frameworkName = text;
-          const match = text.match(/(?:^|\b)([A-Z][A-Za-z0-9\s\-&]+(?:Framework|Method|Process|System|Approach|Model|Strategy))/);
-          if (match) {
-            frameworkName = match[1].trim();
-          } else {
-            // Try to extract a reasonable name from the first part
-            frameworkName = text.split(/[:,.]/)[0].trim();
-            if (frameworkName.length > 50) {
-              frameworkName = frameworkName.substring(0, 50) + "...";
-            }
-          }
-
-          // Determine framework type
-          let type: Framework["type"] = "framework";
-          if (text.toLowerCase().includes('methodology')) type = "methodology";
-          else if (text.toLowerCase().includes('process')) type = "process";
-          else if (text.toLowerCase().includes('pattern')) type = "pattern";
-          else if (text.toLowerCase().includes('technique')) type = "technique";
-
-          // Extract steps first - more strict regex to avoid false positives
-          // Matches patterns like: "Step 1:", "1.", "1)", "1 -" at start of text or after newline/period
-          const stepRegex = /(?:^|[.\n]\s*)(?:step\s+)?(\d{1,2})(?:\.|:|\.|\)|\s+-)\s+([A-Z][^.\n]{10,80})/gim;
-          const steps: Array<{order: number; title: string; description: string}> = [];
-          const seenOrders = new Set<number>();
-          let stepMatch;
-
-          while ((stepMatch = stepRegex.exec(text)) !== null) {
-            const order = parseInt(stepMatch[1]);
-            const stepDescription = (stepMatch[2] || '').trim();
-
-            // Skip if we've seen this order (duplicate), order is too high (likely not a step),
-            // or description is too short (likely a false positive like "4 key elements")
-            if (seenOrders.has(order) || order > 20 || stepDescription.length < 10) {
-              continue;
-            }
-
-            // Skip if it looks like a number in content (e.g., "8 seconds", "4 key elements")
-            if (/^\d+\s+(seconds?|minutes?|hours?|days?|weeks?|months?|years?|key|main|core|primary|steps?|elements?|things?|items?|points?)/i.test(stepMatch[0])) {
-              continue;
-            }
-
-            seenOrders.add(order);
-            steps.push({
-              order: order,
-              title: `Step ${order}`,
-              description: stepDescription,
-            });
-          }
-
-          // Sort steps by order
-          steps.sort((a, b) => a.order - b.order);
-
-          // Calculate dynamic confidence based on framework quality
-          const hasSource = !!source;
-          const confidence = calculateFrameworkConfidence(frameworkName, text, steps, hasSource);
-
-          const framework: Framework = {
-            name: frameworkName,
-            type: type,
-            description: text,
-            useCases: [],
-            confidence: confidence,
-            sourceContent: source ? {
-              id: source.id || "unknown",
-              title: source.title || "Unknown Source",
-              url: source.url || "",
-              type: source.type || "article",
-            } : undefined,
-            steps: steps.length > 0 ? steps : undefined,
-          };
-
-          allFrameworks.push(framework);
+      // When the user named a topic, keep only frameworks that actually match it —
+      // the synthesis endpoint surfaces every framework from the matched sources.
+      if (input.query) {
+        const keywords = input.query
+          .toLowerCase()
+          .split(/\s+/)
+          .filter((w) => w.length > 2);
+        if (keywords.length > 0) {
+          allFrameworks = allFrameworks.filter((f) => {
+            const haystack = `${f.name} ${f.description}`.toLowerCase();
+            return keywords.some((k) => haystack.includes(k));
+          });
         }
       }
 
@@ -412,7 +309,7 @@ Use for: "how do I do X", learning a process, building a checklist from saved co
       responseText += `\n---\n📊 **Summary:**\n`;
       responseText += `- Showing: ${showingCount} of ${aboveThreshold} frameworks (≥${(input.minConfidence * 100).toFixed(0)}% confidence)\n`;
       responseText += `- High confidence (>90%): ${filteredFrameworks.filter((f) => f.confidence > 0.9).length}\n`;
-      responseText += `- Sources analyzed: ${synthesisResult.sources?.length || 0}\n`;
+      responseText += `- Sources analyzed: ${substrate.sourcesAnalyzed}\n`;
 
       if (aboveThreshold > input.limit) {
         responseText += `\n*Showing top ${input.limit} frameworks. Increase limit to see more.*`;

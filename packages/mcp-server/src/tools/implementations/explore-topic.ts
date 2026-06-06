@@ -2,51 +2,6 @@ import { z } from "zod";
 import { Tool } from "../types.js";
 import { Content } from "../../client.js";
 
-// Interfaces for synthesis API response
-interface SynthesisInsight {
-  insight?: string;
-  text?: string;
-  category?: string;
-}
-
-interface SynthesisTheme {
-  theme: string;
-  frequency: number;
-  insight?: string;
-}
-
-interface SynthesisConnection {
-  pattern?: string;
-  concept?: string;
-  implication?: string;
-  strength?: string;
-}
-
-interface SynthesisData {
-  // Various summary field names from API
-  summary?: string;
-  executiveSummary?: string;
-  overview?: string;
-
-  // Various insight field names from API
-  insights?: (string | SynthesisInsight)[];
-  actionableInsights?: SynthesisInsight[];
-  keyInsights?: (string | SynthesisInsight)[];
-
-  // Theme and connection data
-  keyThemes?: SynthesisTheme[];
-  themes?: SynthesisTheme[];
-  connections?: (string | SynthesisConnection)[];
-  patterns?: (string | SynthesisConnection)[];
-  knowledgeGaps?: string[];
-  gaps?: string[];
-
-  // API metadata
-  success?: boolean;
-  sources?: unknown[];
-  sourcesAnalyzed?: number;
-}
-
 // Search result extends Content with relevance score
 interface SearchResult extends Content {
   relevanceScore?: number;
@@ -92,17 +47,16 @@ function isRelevantToTopic(text: string, keywords: string[]): boolean {
 
 export const exploreTopicTool: Tool = {
   name: "explore_topic",
-  description: `Synthesize across multiple saved sources on a topic (~1–2k tokens, vs 20k+ for raw content).
+  description: `Pull structured synthesis MATERIAL across saved sources on a topic (~1–2k tokens, vs 20k+ for raw content). Returns substrate for YOU to synthesize — not a finished answer.
 
-Returns a structured report with these sections:
-  • Overview — executive summary across all matched sources
-  • Key Insights — ranked, topic-filtered takeaways (max 10)
-  • Key Themes — recurring patterns with frequency counts (e.g., "first-principles thinking — 4 sources")
-  • Connections — links between concepts across sources (when includeConnections=true)
-  • Knowledge Gaps — what's missing or under-discussed in the saved content
-  • Top Sources — 5 most relevant items with titles + URLs
+Returns:
+  • Insights — attributed, confidence-ranked takeaways pulled from the matched sources
+  • Contradiction candidates — heuristic flags where two sources may disagree (verify before trusting)
+  • Themes — recurring concepts with real distinct-source counts (e.g., "first-principles — 4 sources")
+  • Frameworks — named methodologies present, with step counts (call extract_frameworks for full steps)
+  • Sources & excerpts — each matched item with a key excerpt + any relationship tag
 
-Use for: "what do my saves collectively say about X", competitive landscape mapping, finding contrarian/open lanes, research questions spanning >1 source. Skips raw text — call get_content_details only if you need exact quotes after. Pass folderId (from list_folders) to scope the exploration to a single folder — synthesize the topic within how the user organized their content.`,
+After calling this, synthesize the material into a direct answer: weigh the contradictions, connect insights across sources, and name gaps the saves don't cover. Use for: "what do my saves collectively say about X", competitive landscape mapping, finding contrarian/open lanes, research spanning >1 source. Call get_content_details only if you need exact quotes after. Pass folderId (from list_folders) to scope to a single folder.`,
   inputSchema: {
     type: "object",
     properties: {
@@ -211,166 +165,114 @@ Use for: "what do my saves collectively say about X", competitive landscape mapp
       };
     }
 
-    // Synthesize the content for deep understanding
-    // Note: "actionable" mode is the only one that properly uses ai_insights.frameworks
-    // "overview" and "thematic" modes use processing_metadata.concepts which may be empty
-    const synthesis = await client.synthesizeContent({
-      query: `Comprehensive exploration of ${params.topic}`,
+    // Fetch structured synthesis SUBSTRATE (not templated prose). The user's LLM
+    // is on the other end of MCP, so we hand it clean material to synthesize from
+    // rather than paying a server LLM to pre-write text it would re-read.
+    const substrateResponse = await client.getSubstrate({
+      query: params.topic,
       contentIds: searchResults.slice(0, params.maxSources).map((r) => r.id),
-      synthesisMode: params.depth === "surface" ? "overview" : "actionable",
-      findConnections: params.includeConnections,
-      findContradictions: true,
+      maxSources: params.maxSources,
+      allowRecentFallback: false,
+      focusAreas: [params.topic],
     });
 
-    // Handle response format - synthesis might be nested or flat
-    const synthData: SynthesisData = synthesis.synthesis || synthesis;
-
-    // Debug: log the structure to understand what API returns
-    console.error("[explore_topic] Synthesis response keys:", Object.keys(synthData));
-
-    // Filter insights and frameworks for topic relevance
-    // The synthesis API extracts ALL frameworks from matched sources, even off-topic ones
-    const topicKeywords = extractTopicKeywords(params.topic);
-
-    if (topicKeywords.length > 0) {
-      const filterInsightArray = (arr: (string | SynthesisInsight)[]): (string | SynthesisInsight)[] => {
-        return arr.filter((item) => {
-          const text = typeof item === "string"
-            ? item
-            : (item.insight || item.text || "");
-          return isRelevantToTopic(text, topicKeywords);
-        });
+    const substrate = substrateResponse.substrate;
+    if (!substrate) {
+      return {
+        content: [
+          {
+            type: "text",
+            text:
+              substrateResponse.error ||
+              `Could not assemble synthesis material for "${params.topic}".`,
+          },
+        ],
+        data: null,
       };
-
-      if (synthData.insights) {
-        synthData.insights = filterInsightArray(synthData.insights);
-      }
-      if (synthData.actionableInsights) {
-        synthData.actionableInsights = synthData.actionableInsights.filter((item) => {
-          const text = item.insight || item.text || "";
-          return isRelevantToTopic(text, topicKeywords);
-        });
-      }
-      if (synthData.keyInsights) {
-        synthData.keyInsights = filterInsightArray(synthData.keyInsights);
-      }
     }
 
-    let responseText = `# 🔍 Topic Exploration: "${params.topic}"\n`;
-    responseText += `**Depth:** ${params.depth} | **Sources Analyzed:** ${searchResults.length}\n\n`;
+    // The synthesis endpoint extracts insights/frameworks from ALL matched
+    // sources, even off-topic ones. Filter to the topic client-side.
+    const topicKeywords = extractTopicKeywords(params.topic);
+    const insights =
+      topicKeywords.length > 0
+        ? substrate.insights.filter((i) => isRelevantToTopic(i.text, topicKeywords))
+        : substrate.insights;
+    const frameworks =
+      topicKeywords.length > 0
+        ? substrate.frameworks.filter((f) =>
+            isRelevantToTopic(`${f.name} ${f.description}`, topicKeywords)
+          )
+        : substrate.frameworks;
 
-    // Overview Section - check multiple possible field names
-    const overviewText = synthData.summary || synthData.executiveSummary || synthData.overview;
-    responseText += `## 📋 Overview\n`;
-    if (overviewText && !overviewText.includes("0 insights")) {
-      // Only use API summary if it's meaningful
-      responseText += `${overviewText}\n\n`;
-    } else {
-      // Generate a basic overview from search results
-      const contentTypes = [...new Set(searchResults.map(r => r.contentType))];
-      responseText += `Found ${searchResults.length} pieces of content about "${params.topic}" `;
-      responseText += `(${contentTypes.join(", ")}).\n\n`;
-    }
-
-    // Key Insights - check multiple possible field names
-    const insights = synthData.insights || synthData.actionableInsights || synthData.keyInsights || [];
-    if (insights.length > 0) {
-      responseText += `## 💡 Key Insights\n`;
-      insights.slice(0, 10).forEach((insight, idx) => {
-        if (typeof insight === 'string') {
-          responseText += `${idx + 1}. ${insight}\n`;
-        } else if (insight.insight) {
-          // Format from actionableInsights
-          responseText += `${idx + 1}. **${insight.insight}**`;
-          if (insight.category) {
-            responseText += ` *(${insight.category})*`;
-          }
-          responseText += `\n`;
-        } else if (insight.text) {
-          responseText += `${idx + 1}. ${insight.text}\n`;
-        }
-      });
-      responseText += `\n`;
-    } else {
-      // Fallback: extract key points from content summaries
-      responseText += `## 💡 Content Summaries\n`;
-      searchResults.slice(0, 5).forEach((result, idx) => {
-        if (result.summary) {
-          const summaryText = typeof result.summary === 'string'
-            ? result.summary
-            : (result.summary as { one_sentence?: string; text?: string }).one_sentence
-              || (result.summary as { one_sentence?: string; text?: string }).text
-              || '';
-          if (summaryText) {
-            responseText += `${idx + 1}. **${result.title || 'Untitled'}**: ${summaryText.slice(0, 200)}${summaryText.length > 200 ? '...' : ''}\n`;
-          }
-        }
-      });
-      responseText += `\n`;
-    }
-
-    // Key Themes (from enhanced synthesis)
-    const themes = synthData.keyThemes || synthData.themes || [];
-    if (themes.length > 0) {
-      responseText += `## 🎨 Key Themes\n`;
-      themes.slice(0, 5).forEach((theme, idx) => {
-        responseText += `${idx + 1}. **${theme.theme}** (${theme.frequency} sources)\n`;
-        if (theme.insight) {
-          responseText += `   - ${theme.insight}\n`;
-        }
-      });
-      responseText += `\n`;
-    }
-
-    // Connections (if found) - check multiple possible field names
-    const connections = synthData.connections || synthData.patterns || [];
-    if (params.includeConnections && connections.length > 0) {
-      responseText += `## 🔗 Related Topics & Connections\n`;
-      connections.slice(0, 8).forEach((conn) => {
-        if (typeof conn === 'string') {
-          responseText += `- ${conn}\n`;
-        } else if (conn.pattern) {
-          // Format from enhanced synthesis
-          responseText += `- **${conn.pattern}**`;
-          if (conn.implication) {
-            responseText += `: ${conn.implication}`;
-          }
-          responseText += `\n`;
-        } else if (conn.concept) {
-          responseText += `- **${conn.concept}**`;
-          if (conn.strength) {
-            responseText += ` (strength: ${conn.strength})`;
-          }
-          responseText += `\n`;
-        }
-      });
-      responseText += `\n`;
-    }
-
-    // Knowledge Gaps
-    const knowledgeGaps = synthData.knowledgeGaps || synthData.gaps || [];
-    if (knowledgeGaps.length > 0) {
-      responseText += `## ❓ Areas to Explore Further\n`;
-      knowledgeGaps.slice(0, 5).forEach((gap) => {
-        responseText += `- ${gap}\n`;
-      });
-      responseText += `\n`;
-    }
-
-    // Sources
-    responseText += `## 📚 Top Sources\n`;
     const typeIcons: Record<string, string> = {
       youtube: "📺",
       x_twitter: "𝕏",
       reddit: "🔗",
       article: "📄",
-      pdf: "📑"
+      pdf: "📑",
     };
-    searchResults.slice(0, 5).forEach((source, idx) => {
-      const icon = typeIcons[source.contentType] || "📄";
-      responseText += `${idx + 1}. ${icon} [${source.title || "Untitled"}](${source.url})\n`;
-    });
-    
+
+    let responseText = `# 🔍 Synthesis material: "${params.topic}"\n`;
+    responseText += `**Sources analyzed:** ${substrate.sourcesAnalyzed}\n\n`;
+    responseText +=
+      `> This is structured *substrate*, not a finished answer. Synthesize it into a ` +
+      `direct response to the user's question: weigh the contradiction candidates, ` +
+      `connect insights across sources, and call out any gaps the saved content doesn't cover.\n\n`;
+
+    // Insights — attributed, ranked by confidence.
+    if (insights.length > 0) {
+      responseText += `## 💡 Insights (${insights.length})\n`;
+      insights.forEach((i, idx) => {
+        responseText += `${idx + 1}. ${i.text} — *${i.sourceTitle}* (conf ${(i.confidence * 100).toFixed(0)}%)\n`;
+      });
+      responseText += `\n`;
+    }
+
+    // Contradiction candidates — the cross-source tension to resolve.
+    if (substrate.contradictionCandidates.length > 0) {
+      responseText += `## ⚔️ Contradiction candidates (${substrate.contradictionCandidates.length})\n`;
+      responseText += `*Heuristic flags — verify before trusting; the sources may not truly conflict.*\n`;
+      substrate.contradictionCandidates.forEach((c, idx) => {
+        responseText += `${idx + 1}. **${c.sourceA}:** ${c.claimA}\n`;
+        responseText += `   ↔ **${c.sourceB}:** ${c.claimB}\n`;
+      });
+      responseText += `\n`;
+    }
+
+    // Themes — real distinct-source counts.
+    if (substrate.themes.length > 0) {
+      responseText += `## 🎨 Themes\n`;
+      substrate.themes.forEach((t) => {
+        responseText += `- **${t.theme}** — ${t.sourceCount} source${t.sourceCount === 1 ? "" : "s"}\n`;
+      });
+      responseText += `\n`;
+    }
+
+    // Frameworks — surfaced with step counts; extract_frameworks returns full steps.
+    if (frameworks.length > 0) {
+      responseText += `## 🧩 Frameworks (${frameworks.length})\n`;
+      frameworks.forEach((f) => {
+        const stepNote = f.steps.length > 0 ? ` (${f.steps.length} steps)` : "";
+        responseText += `- **${f.name}**${stepNote} — *${f.sourceTitle}*\n`;
+      });
+      responseText += `*Call extract_frameworks for full step-by-step detail.*\n\n`;
+    }
+
+    // Source relationships — excerpt + any deterministic relationship tag.
+    if (substrate.sourceRelationships.length > 0) {
+      responseText += `## 📚 Sources & excerpts\n`;
+      substrate.sourceRelationships.forEach((s, idx) => {
+        const icon = typeIcons[s.type] || "📄";
+        const relTag = s.relationship ? ` \`${s.relationship}\`` : "";
+        responseText += `${idx + 1}. ${icon} [${s.title || "Untitled"}](${s.url})${relTag}\n`;
+        if (s.excerpt) {
+          responseText += `   > ${s.excerpt.slice(0, 280)}${s.excerpt.length > 280 ? "…" : ""}\n`;
+        }
+      });
+      responseText += `\n`;
+    }
+
     return {
       content: [
         {
@@ -381,8 +283,8 @@ Use for: "what do my saves collectively say about X", competitive landscape mapp
       data: {
         topic: params.topic,
         depth: params.depth,
-        sourcesAnalyzed: searchResults.length,
-        synthesis: synthData,
+        sourcesAnalyzed: substrate.sourcesAnalyzed,
+        substrate: { ...substrate, insights, frameworks },
         sources: searchResults,
       },
     };
