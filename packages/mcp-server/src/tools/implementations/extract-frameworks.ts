@@ -28,7 +28,7 @@ const inputSchema = z.object({
     .min(0)
     .max(1)
     .optional()
-    .default(0.7)
+    .default(0.5)
     .describe("Minimum confidence score for frameworks (0-1)"),
   limit: z
     .number()
@@ -125,7 +125,7 @@ Returns an array of frameworks, each shaped like:
     steps: [{ order: 1, title: "...", description: "...", example?: "..." }, ...],
     components?: [{ name, description, importance: "critical"|"important"|"optional" }],
     useCases: ["...", "..."],
-    confidence: 0.0–1.0,   // filtered by minConfidence (default 0.7)
+    confidence: 0.0–1.0,   // filtered by minConfidence (default 0.5)
     sourceContent: { id, title, url, type }
   }
 
@@ -149,7 +149,7 @@ Use for: "how do I do X", learning a process, building a checklist from saved co
         type: "number",
         minimum: 0,
         maximum: 1,
-        default: 0.7,
+        default: 0.5,
         description: "Minimum confidence score for frameworks (0-1)",
       },
       limit: {
