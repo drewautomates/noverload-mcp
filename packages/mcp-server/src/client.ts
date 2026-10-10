@@ -203,6 +203,58 @@ export const SwipeFileStatusResponseSchema = z.object({
   totalSwipeFileTags: z.number().optional(),
 });
 
+// OPTD Research Lens: strategy extraction (mirrors StrategyAnalysis in packages/db)
+export const StrategyAnalysisSchema = z.object({
+  version: z.literal(1),
+  is_strategy: z.boolean(),
+  strategy_name: z.string().nullable(),
+  summary: z.string(),
+  market: z.object({
+    instruments: z.array(z.string()),
+    timeframes: z.array(z.string()),
+    session: z.string().nullable(),
+    stated_or_implied: z.enum(["stated", "implied"]),
+  }),
+  rules: z.array(z.object({
+    kind: z.enum(["entry", "exit", "stop", "target", "filter", "sizing", "management"]),
+    rule: z.string(),
+    status: z.enum(["stated", "implied", "visual_only"]),
+    evidence: z.string().nullable(),
+    testable: z.boolean(),
+    ambiguity: z.string().nullable(),
+  })),
+  indicators: z.array(z.object({
+    name: z.string(),
+    role: z.enum(["levels", "confluence", "gate"]),
+    settings: z.string().nullable(),
+    stated_or_implied: z.enum(["stated", "implied"]),
+  })),
+  unverifiable_claims: z.array(z.object({ claim: z.string(), why: z.string() })),
+  missing_for_backtest: z.array(z.string()),
+  testability: z.object({
+    score: z.number(),
+    verdict: z.enum(["testable", "testable_with_assumptions", "not_testable"]),
+    reason: z.string(),
+  }),
+  claude_code_spec: z.string(),
+  model: z.string(),
+  analyzed_at: z.string(),
+});
+
+export const ExtractStrategyResponseSchema = z.object({
+  success: z.boolean(),
+  contentId: z.string(),
+  contentTitle: z.string(),
+  cached: z.boolean(),
+  analysis: StrategyAnalysisSchema,
+  // present on fresh runs: monthlyAllowance null = unlimited
+  usage: z.object({
+    monthlyAllowance: z.number().nullable(),
+    usedThisMonth: z.number(),
+    topupRemaining: z.number(),
+  }).optional(),
+});
+
 export type Content = z.infer<typeof ContentSchema>;
 export type Action = z.infer<typeof ActionSchema>;
 export type Goal = z.infer<typeof GoalSchema>;
@@ -216,6 +268,8 @@ export type RemoveTagsResponse = z.infer<typeof RemoveTagsResponseSchema>;
 export type MarkSwipeFileResponse = z.infer<typeof MarkSwipeFileResponseSchema>;
 export type UnmarkSwipeFileResponse = z.infer<typeof UnmarkSwipeFileResponseSchema>;
 export type SwipeFileStatusResponse = z.infer<typeof SwipeFileStatusResponseSchema>;
+export type StrategyAnalysis = z.infer<typeof StrategyAnalysisSchema>;
+export type ExtractStrategyResponse = z.infer<typeof ExtractStrategyResponseSchema>;
 
 // Structured synthesis material returned by the v2 synthesis endpoint in
 // mode:"substrate" (Phase 1). The MCP renders this for a client-side LLM to
@@ -279,6 +333,9 @@ export class NoverloadClient {
     };
   }
 
+  // Active feature keys from billing.entitlements, filled by initialize()
+  features: string[] = [];
+
   async initialize(): Promise<void> {
     // Verify the token is valid by making a test request
     const response = await this.request("/api/user");
@@ -289,6 +346,10 @@ export class NoverloadClient {
       const errorText = await response.text().catch(() => "Unknown error");
       throw new Error(`Invalid access token or API unavailable: ${response.status} - ${errorText}`);
     }
+    const data = await response.json().catch(() => ({})) as { features?: unknown };
+    this.features = Array.isArray(data.features)
+      ? data.features.filter((f): f is string => typeof f === "string")
+      : [];
   }
 
   async validateToken(): Promise<boolean> {
@@ -1346,6 +1407,33 @@ export class NoverloadClient {
 
     const data = await response.json();
     return SwipeFileStatusResponseSchema.parse(data);
+  }
+
+  // OPTD Research Lens
+  async extractStrategy(contentId: string, refresh = false): Promise<ExtractStrategyResponse> {
+    if (this.config.readOnly) {
+      throw new Error("Cannot run strategy analysis in read-only mode");
+    }
+
+    const query = refresh ? "?refresh=true" : "";
+    const response = await this.request(`/api/mcp/content/${contentId}/strategy${query}`, {
+      method: "POST",
+    });
+
+    if (!response.ok) {
+      let errorMessage = "Failed to extract strategy";
+      try {
+        const errorData = await response.json() as { message?: string; error?: string };
+        if (errorData.message) errorMessage = errorData.message;
+        else if (errorData.error) errorMessage = errorData.error;
+      } catch {
+        errorMessage = `${errorMessage} (HTTP ${response.status})`;
+      }
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    return ExtractStrategyResponseSchema.parse(data);
   }
 
   // Concept methods

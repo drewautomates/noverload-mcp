@@ -9,6 +9,7 @@ import { saveContentTool } from "./implementations/save-content.js";
 import { batchGetContentTool } from "./implementations/batch-get.js";
 import { exploreTopicTool } from "./implementations/explore-topic.js";
 import { extractFrameworksTool } from "./implementations/extract-frameworks.js";
+import { extractStrategyTool } from "./implementations/extract-strategy.js";
 import { listGoalsTool } from "./implementations/goals.js";
 
 // CONCEPT TOOLS - Personal wiki / knowledge compilation
@@ -75,6 +76,9 @@ export const tools: Tool[] = [
 
   // 12. Concept detail: "Show me this concept page"
   getConceptTool,
+
+  // 13. Strategy: "What are the rules in this video / can I backtest it" (OPTD Research Lens)
+  extractStrategyTool,
 ];
 
 // Export individual tools for testing

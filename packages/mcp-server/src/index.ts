@@ -42,6 +42,53 @@ async function main() {
 
   const transport = new StdioServerTransport();
 
+  let client: NoverloadClient | null = null;
+  let config: Config | null = null;
+
+  // Feature-gated tools (requiredFeature) are registered only for users who have the
+  // feature. That needs the user's features before registration, so initialize eagerly
+  // when config is present. If that fails, keep the old lazy behaviour: register only
+  // ungated tools and surface the config error on the first call.
+  // The MCP handshake waits on this, so cap it: a slow API hides gated tools
+  // for the session instead of stalling startup.
+  const STARTUP_INIT_TIMEOUT_MS = 8000;
+  let userFeatures: string[] | null = null;
+  const rawStartupConfig = process.env.NOVERLOAD_CONFIG;
+  if (rawStartupConfig) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      config = ConfigSchema.parse(JSON.parse(rawStartupConfig));
+      const startupClient = new NoverloadClient(config);
+      await Promise.race([
+        startupClient.initialize(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`initialize timed out after ${STARTUP_INIT_TIMEOUT_MS}ms`)),
+            STARTUP_INIT_TIMEOUT_MS
+          );
+        }),
+      ]);
+      client = startupClient;
+      userFeatures = startupClient.features;
+    } catch (error) {
+      console.error("Startup initialization failed; feature-gated tools hidden:", error);
+      client = null;
+      config = null;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+  const availableTools = tools.filter(
+    (t) => !t.requiredFeature || (userFeatures?.includes(t.requiredFeature) ?? false)
+  );
+
+  // Research Lens lines appear only when the tool is registered for this user
+  const hasStrategyTool = availableTools.some((t) => t.name === "extract_strategy");
+  const STRATEGY_CHEATSHEET_LINE =
+    "- `extract_strategy` → one trading video/post → rules (stated vs implied) + backtest brief (~1–3k tok)\n";
+  const STRATEGY_ROUTING_LINE =
+    '- "What are the rules in this strategy / can I backtest it?" → search, then `extract_strategy` on the item\n';
+
   // Provide instructions for LLMs on context management
   const instructions = `Noverload MCP: query a user's saved content (YouTube, X, Reddit, articles, PDFs).
 
@@ -50,21 +97,21 @@ async function main() {
 - \`get_content_details\` → read one item in full (1k–50k tok)
 - \`explore_topic\` → synthesize across many items (~1–2k tok)
 - \`extract_frameworks\` → pull step-by-step methodologies (~500–2k tok)
-
+${hasStrategyTool ? STRATEGY_CHEATSHEET_LINE : ""}
 **Default flow:** \`search_content\` → answer from summaries. Only fetch full text or synthesize when summaries aren't enough.
 
 ## When the cheatsheet isn't obvious
 - "What does X say about Y?" → search, then \`get_content_details\` on top hit
 - "What patterns/themes exist across my saves about X?" → \`explore_topic\`
 - "How do I do X?" → \`extract_frameworks\` with query="X"
-- Need quotes or exact wording → \`get_content_details\` (mind token count)
+${hasStrategyTool ? STRATEGY_ROUTING_LINE : ""}- Need quotes or exact wording → \`get_content_details\` (mind token count)
 - Multi-source report → \`explore_topic\` first, then \`batch_get_content\` on the IDs you want to quote
 
 ## Philosophy
 Noverload retrieves; you reason. Summaries are usually enough — don't pull raw text by default.
 
-## Available tools (${tools?.length || 0})
-${tools && tools.length > 0 ? tools.map((t) => t.name).join(", ") : "none"}`;
+## Available tools (${availableTools.length})
+${availableTools.length > 0 ? availableTools.map((t) => t.name).join(", ") : "none"}`;
 
   const server = new McpServer(
     {
@@ -80,9 +127,6 @@ ${tools && tools.length > 0 ? tools.map((t) => t.name).join(", ") : "none"}`;
       instructions,
     }
   );
-
-  let client: NoverloadClient | null = null;
-  let config: Config | null = null;
 
   // Convert JSON Schema to a Zod raw shape for McpServer.registerTool
   function jsonSchemaToZodShape(schema: any): Record<string, z.ZodTypeAny> {
@@ -128,7 +172,7 @@ ${tools && tools.length > 0 ? tools.map((t) => t.name).join(", ") : "none"}`;
   }
 
   // Register tools using McpServer so the SDK advertises and handles list/call automatically
-  for (const t of tools) {
+  for (const t of availableTools) {
     const zodShape: z.ZodRawShape = jsonSchemaToZodShape(t.inputSchema as any);
     // The SDK's generic registerTool over a dynamic shape triggers TS2589
     // (excessively deep instantiation). Call it through a fixed, non-generic
