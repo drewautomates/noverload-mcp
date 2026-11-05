@@ -103,8 +103,10 @@ export const listSavedContentTool: Tool = {
             ? { text: item.summary } 
             : item.summary;
           
-          if (summaryObj.one_sentence) {
-            responseText += `**Summary:** ${summaryObj.one_sentence}\n`;
+          // Summaries are stored as plain strings now; older rows are objects.
+          const summaryLine = summaryObj.one_sentence ?? summaryObj.text;
+          if (summaryLine) {
+            responseText += `**Summary:** ${summaryLine}\n`;
           }
         }
         

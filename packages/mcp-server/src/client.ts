@@ -441,8 +441,8 @@ export class NoverloadClient {
       ogImage: item.ogImage ?? item.og_image ?? null,
       processingMetadata: item.processingMetadata ?? item.processing_metadata ?? null,
 
-      // Tags
-      tags: item.tags ?? undefined,
+      // Tags (v2 search nests them under metadata)
+      tags: item.tags ?? (item.metadata as { tags?: unknown } | undefined)?.tags ?? undefined,
 
       // Folder organization
       folderId: item.folderId ?? item.folder_id ?? undefined,
@@ -659,7 +659,7 @@ export class NoverloadClient {
       dateTo?: string;
       excludeDomains?: string[];
       enableConceptExpansion?: boolean;
-      searchMode?: "any" | "all" | "phrase";
+      searchMode?: "any" | "all" | "phrase" | "semantic" | "hybrid";
       fuzzyMatch?: boolean;
     }
   ): Promise<any> {
@@ -672,13 +672,14 @@ export class NoverloadClient {
       if (options?.searchMode) {
         if (options.searchMode === "phrase" || options.searchMode === "all") {
           searchMode = "fulltext"; // Use fulltext for exact/all matching
-        } else if (options.searchMode === "any") {
+        } else if (options.searchMode === "any" || options.searchMode === "hybrid") {
           searchMode = "hybrid"; // Use hybrid for broader matching
         }
       }
       
-      // Override to semantic if concept expansion is explicitly requested
-      if (options?.enableConceptExpansion === true) {
+      // Pure semantic only when explicitly asked for. fuzzyMatch (default true) used to
+      // force this, so every default search skipped hybrid ranking and ranked worse.
+      if (options?.searchMode === "semantic") {
         searchMode = "semantic";
       }
       
@@ -732,7 +733,7 @@ export class NoverloadClient {
           return {
             ...baseContent,
             // Search-specific fields
-            relevanceScore: (item.relevanceScore ?? item.score ?? 0) as number,
+            relevanceScore: (item.relevanceScore ?? item.score ?? item.similarity ?? 0) as number,
           };
         });
       }

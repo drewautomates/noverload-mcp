@@ -1,6 +1,6 @@
 {
   "name": "noverload-mcp",
-  "version": "0.13.1",
+  "version": "0.13.2",
   "description": "MCP server for Noverload - Access saved content in AI tools with advanced search, synthesis, and token management",
   "type": "module",
   "main": "dist/index.js",
@@ -33,7 +33,7 @@
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest"
+    "test": "tsc && vitest run"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.4",

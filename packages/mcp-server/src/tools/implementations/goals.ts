@@ -10,11 +10,18 @@ export const listGoalsTool: Tool = {
   modifies: false,
   handler: async (client) => {
     const goals = await client.listGoals();
+    let text = `# Your Goals\n\nFound ${goals.length} goal${goals.length === 1 ? "" : "s"}\n\n`;
+    for (const goal of goals) {
+      text += `## ${goal.title}\n`;
+      text += `**ID:** \`${goal.id}\` | **Category:** ${goal.category} | **Status:** ${goal.isActive ? "active" : "inactive"}\n`;
+      if (goal.description) text += `${goal.description}\n`;
+      text += `\n`;
+    }
     return {
       content: [
         {
           type: "text",
-          text: `Found ${goals.length} goals`,
+          text,
         },
       ],
       data: goals,

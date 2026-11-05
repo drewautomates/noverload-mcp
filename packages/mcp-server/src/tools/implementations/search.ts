@@ -118,10 +118,8 @@ export const searchContentTool: Tool = {
     };
     
     // Add searchMode if it's a legacy mode (any, all, phrase)
-    if (params.searchMode === "any" || params.searchMode === "all" || params.searchMode === "phrase") {
+    if (params.searchMode !== "smart") {
       searchOptions.searchMode = params.searchMode;
-    } else if (params.searchMode === "semantic") {
-      searchOptions.enableConceptExpansion = true;
     }
     
     let results = await client.searchContent(enhancedQuery, searchOptions);
@@ -271,8 +269,11 @@ export const searchContentTool: Tool = {
         const typeIcon = typeIcons[result.contentType] || "📄";
         
         // Relevance indicator
+        // Semantic scores are cosine similarity (0–1). Hybrid scores are rank-fusion
+        // values that can exceed 1, so they get no icon and are not shown as a %.
+        const isSimilarityScore = typeof result.relevanceScore === "number" && result.relevanceScore <= 1;
         let relevanceIcon = "";
-        if (result.relevanceScore) {
+        if (result.relevanceScore && isSimilarityScore) {
           if (result.relevanceScore > 0.8) relevanceIcon = "🎯";
           else if (result.relevanceScore > 0.6) relevanceIcon = "✅";
           else if (result.relevanceScore > 0.4) relevanceIcon = "➡️";
@@ -286,9 +287,11 @@ export const searchContentTool: Tool = {
         if (params.showRelevanceExplanation) {
           if (result.matchReason && Array.isArray(result.matchReason)) {
             responseText += `**Why matched:** Matched in ${result.matchReason.join(", ")}\n`;
-          } else if (result.relevanceScore) {
+          } else if (result.relevanceScore && isSimilarityScore) {
             const percentage = (result.relevanceScore * 100).toFixed(0);
             responseText += `**Relevance:** ${percentage}% match\n`;
+          } else if (result.relevanceScore) {
+            responseText += `**Relevance score:** ${result.relevanceScore.toFixed(2)} (hybrid rank fusion; higher is better)\n`;
           }
         }
         
@@ -315,8 +318,10 @@ export const searchContentTool: Tool = {
             ? { text: result.summary } 
             : result.summary;
           
-          if (summaryObj.one_sentence) {
-            responseText += `\n📝 **Summary:** ${summaryObj.one_sentence}\n`;
+          // Summaries are stored as plain strings now; older rows are objects.
+          const summaryLine = summaryObj.one_sentence ?? summaryObj.text;
+          if (summaryLine) {
+            responseText += `\n📝 **Summary:** ${summaryLine}\n`;
           }
           
           // Key insights with bullets
