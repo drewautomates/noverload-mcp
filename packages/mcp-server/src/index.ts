@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import { NoverloadClient } from "./client.js";
+import { NoverloadClient, NoverloadAuthError } from "./client.js";
 import { resources } from "./resources/index.js";
 import { tools } from "./tools/index.js";
 
@@ -171,8 +171,51 @@ ${availableTools.length > 0 ? availableTools.map((t) => t.name).join(", ") : "no
     return shape;
   }
 
+  // Lazy init for when startup init was skipped or failed. On success, register any
+  // feature-gated tools the startup attempt missed (e.g. the API was slow past
+  // STARTUP_INIT_TIMEOUT_MS) and tell the client the tool list changed, so the
+  // session doesn't stay without them until a reconnect.
+  async function ensureClient(): Promise<NoverloadClient> {
+    if (client) return client;
+    const rawConfig = process.env.NOVERLOAD_CONFIG;
+    if (!rawConfig) {
+      throw new Error(
+        "Configuration required. Set NOVERLOAD_CONFIG environment variable."
+      );
+    }
+    let freshClient: NoverloadClient;
+    try {
+      config = ConfigSchema.parse(JSON.parse(rawConfig));
+      freshClient = new NoverloadClient(config);
+      await freshClient.initialize();
+    } catch (error) {
+      if (error instanceof NoverloadAuthError) throw error;
+      throw new Error(`Invalid configuration: ${error}`);
+    }
+    client = freshClient;
+
+    const missedTools = tools.filter(
+      (t) =>
+        t.requiredFeature &&
+        !registeredToolNames.has(t.name) &&
+        freshClient.features.includes(t.requiredFeature)
+    );
+    if (missedTools.length > 0) {
+      registerTools(missedTools);
+      try {
+        await server.sendToolListChanged();
+      } catch (err) {
+        console.error("Failed to send tools/list_changed notification:", err);
+      }
+    }
+    return freshClient;
+  }
+
   // Register tools using McpServer so the SDK advertises and handles list/call automatically
-  for (const t of availableTools) {
+  const registeredToolNames = new Set<string>();
+  function registerTools(toolsToRegister: typeof tools): void {
+  for (const t of toolsToRegister) {
+    registeredToolNames.add(t.name);
     const zodShape: z.ZodRawShape = jsonSchemaToZodShape(t.inputSchema as any);
     // The SDK's generic registerTool over a dynamic shape triggers TS2589
     // (excessively deep instantiation). Call it through a fixed, non-generic
@@ -197,26 +240,14 @@ ${availableTools.length > 0 ? availableTools.map((t) => t.name).join(", ") : "no
         },
       },
       async (args) => {
-        if (!client) {
-          const rawConfig = process.env.NOVERLOAD_CONFIG;
-          if (!rawConfig) {
-            throw new Error(
-              "Configuration required. Set NOVERLOAD_CONFIG environment variable."
-            );
-          }
-          try {
-            config = ConfigSchema.parse(JSON.parse(rawConfig));
-            client = new NoverloadClient(config);
-            await client.initialize();
-          } catch (error) {
-            throw new Error(`Invalid configuration: ${error}`);
-          }
-        }
+        const readyClient = await ensureClient();
         // Delegate to existing tool handler (validates args internally)
-        return (await t.handler(client, args)) as any;
+        return (await t.handler(readyClient, args)) as any;
       }
     );
   }
+  }
+  registerTools(availableTools);
 
   // Minimal prompts support to satisfy clients that expect prompts
   server.server.setRequestHandler(ListPromptsRequestSchema, async () => {
@@ -232,24 +263,7 @@ ${availableTools.length > 0 ? availableTools.map((t) => t.name).join(", ") : "no
 
   server.server.setRequestHandler(ListResourcesRequestSchema, async () => {
     console.error("ListResources handler called");
-    if (!client) {
-      const rawConfig = process.env.NOVERLOAD_CONFIG;
-      if (!rawConfig) {
-        throw new Error(
-          "Configuration required. Set NOVERLOAD_CONFIG environment variable."
-        );
-      }
-
-      try {
-        config = ConfigSchema.parse(JSON.parse(rawConfig));
-        client = new NoverloadClient(config);
-        await client.initialize();
-      } catch (error) {
-        throw new Error(`Invalid configuration: ${error}`);
-      }
-    }
-
-    const resourceList = await resources.list(client);
+    const resourceList = await resources.list(await ensureClient());
     return {
       resources: resourceList,
     };
@@ -258,24 +272,7 @@ ${availableTools.length > 0 ? availableTools.map((t) => t.name).join(", ") : "no
   server.server.setRequestHandler(
     ReadResourceRequestSchema,
     async (request) => {
-      if (!client) {
-        const rawConfig = process.env.NOVERLOAD_CONFIG;
-        if (!rawConfig) {
-          throw new Error(
-            "Configuration required. Set NOVERLOAD_CONFIG environment variable."
-          );
-        }
-
-        try {
-          config = ConfigSchema.parse(JSON.parse(rawConfig));
-          client = new NoverloadClient(config);
-          await client.initialize();
-        } catch (error) {
-          throw new Error(`Invalid configuration: ${error}`);
-        }
-      }
-
-      return await resources.read(client, request.params.uri);
+      return await resources.read(await ensureClient(), request.params.uri);
     }
   );
 

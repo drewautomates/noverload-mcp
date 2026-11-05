@@ -323,6 +323,18 @@ export interface SubstrateResponse {
   error?: string;
 }
 
+/**
+ * The API rejected the access token (HTTP 401). Raised from request() so callers'
+ * fallback/catch-all paths can't turn it into "no results" — a bad token used to
+ * look exactly like an empty library.
+ */
+export class NoverloadAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NoverloadAuthError";
+  }
+}
+
 export class NoverloadClient {
   private headers: Record<string, string>;
 
@@ -366,13 +378,28 @@ export class NoverloadClient {
     options: RequestInit = {}
   ): Promise<Response> {
     const url = `${this.config.apiUrl}${path}`;
-    return fetch(url, {
+    const response = await fetch(url, {
       ...options,
       headers: {
         ...this.headers,
         ...options.headers,
       },
     });
+    if (response.status === 401) {
+      let detail = "";
+      try {
+        const body = await response.clone().json() as { error?: unknown; message?: unknown };
+        const raw = body.error ?? body.message;
+        if (typeof raw === "string") detail = raw;
+      } catch {
+        // Non-JSON 401 body; fall through with the generic message
+      }
+      throw new NoverloadAuthError(
+        `Noverload rejected the access token${detail ? ` (${detail})` : ""}. ` +
+        "Check the token in your MCP config, or generate a new one in Noverload settings, then restart the MCP server."
+      );
+    }
+    return response;
   }
 
   /**
@@ -718,6 +745,7 @@ export class NoverloadClient {
       
       return [];
     } catch (error) {
+      if (error instanceof NoverloadAuthError) throw error;
       console.error("v2 search error:", error);
       // Fall back to v1 search
       return this.searchContentV1(query, options);
@@ -751,6 +779,7 @@ export class NoverloadClient {
 
       return results.map((item: Record<string, unknown>) => this.transformRawContent(item));
     } catch (error) {
+      if (error instanceof NoverloadAuthError) throw error;
       console.error("v1 search error:", error);
       return [];
     }
@@ -945,6 +974,7 @@ export class NoverloadClient {
       const data = await response.json();
       return data;
     } catch (error) {
+      if (error instanceof NoverloadAuthError) throw error;
       console.error("Synthesis error:", error);
       // Try v1 fallback
       return this.synthesizeContentV1(params, params.contentIds);
@@ -1166,6 +1196,7 @@ export class NoverloadClient {
       
       return data.contents || [];
     } catch (error) {
+      if (error instanceof NoverloadAuthError) throw error;
       console.error("Get enriched content error:", error);
       return [];
     }
