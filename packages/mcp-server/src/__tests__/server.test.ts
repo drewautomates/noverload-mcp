@@ -180,15 +180,24 @@ describe("search_content output", () => {
     expect(out).toContain("**Summary:** How to spot liquidity sweeps");
     expect(out).toContain("`m4-tjr`");
     expect(out).toContain("~8,100 tokens");
-    expect(out).toContain("**Relevance:** 38% match");
     // Tags nested under metadata (older server) are still read.
     expect(out).toContain("`tjr`");
-    // Hybrid rank-fusion scores > 1 are not shown as a percentage.
-    expect(out).not.toContain("108%");
-    expect(out).toContain("**Relevance score:** 1.08");
+    // Default (smart/hybrid) scores are rank-fusion values: never shown as a percentage.
+    expect(out).not.toMatch(/% match/);
+    expect(out).toContain("best match first");
     // Default search (fuzzyMatch defaults to true) must use smart/hybrid ranking,
     // not be forced into pure semantic mode.
     expect(requests).toContain("search mode=smart");
+  });
+
+  it("shows similarity as a percentage only in semantic mode", async () => {
+    const { client, requests } = await connect({});
+    const out = text(
+      await client.callTool({ name: "search_content", arguments: { query: "liquidity sweep", searchMode: "semantic" } })
+    );
+    expect(requests).toContain("search mode=semantic");
+    expect(out).toContain("**Relevance:** 38% match");
+    expect(out).not.toContain("best match first");
   });
 });
 

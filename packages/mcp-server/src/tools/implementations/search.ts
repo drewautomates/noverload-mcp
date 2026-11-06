@@ -249,6 +249,10 @@ export const searchContentTool: Tool = {
       }
     }
     
+    if (params.searchMode !== "semantic" && results.length > 0) {
+      responseText += `\n**Order:** best match first (rank-fused keyword + semantic; no per-result score)`;
+    }
+
     responseText += `\n\n`;
     
     if (results.length > 0) {
@@ -269,9 +273,11 @@ export const searchContentTool: Tool = {
         const typeIcon = typeIcons[result.contentType] || "📄";
         
         // Relevance indicator
-        // Semantic scores are cosine similarity (0–1). Hybrid scores are rank-fusion
-        // values that can exceed 1, so they get no icon and are not shown as a %.
-        const isSimilarityScore = typeof result.relevanceScore === "number" && result.relevanceScore <= 1;
+        // Only semantic mode returns cosine similarity (0–1). Every other mode ranks by
+        // rank fusion, whose scores are not percentages (and can fall either side of 1),
+        // so those results are shown in rank order with no score.
+        const isSimilarityScore =
+          params.searchMode === "semantic" && typeof result.relevanceScore === "number";
         let relevanceIcon = "";
         if (result.relevanceScore && isSimilarityScore) {
           if (result.relevanceScore > 0.8) relevanceIcon = "🎯";
@@ -290,8 +296,6 @@ export const searchContentTool: Tool = {
           } else if (result.relevanceScore && isSimilarityScore) {
             const percentage = (result.relevanceScore * 100).toFixed(0);
             responseText += `**Relevance:** ${percentage}% match\n`;
-          } else if (result.relevanceScore) {
-            responseText += `**Relevance score:** ${result.relevanceScore.toFixed(2)} (hybrid rank fusion; higher is better)\n`;
           }
         }
         
